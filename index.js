@@ -7,8 +7,13 @@ import morgan from "morgan";
 dotenv.config({ path: ".env.dev" });
 dotenv.config();
 
-const [{ default: authRouter }, { default: prisma }] = await Promise.all([
+const [
+	{ default: authRouter },
+	{ default: babiesRouter },
+	{ default: prisma },
+] = await Promise.all([
 	import("./src/routes/auth.js"),
+	import("./src/routes/babies.js"),
 	import("./src/db/prisma.js"),
 ]);
 
@@ -57,6 +62,7 @@ app.get("/health", async (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/babies", babiesRouter);
 
 app.use((req, res) => {
 	res.status(404).json({
