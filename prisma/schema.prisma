@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BabySex {
+  GIRL
+  BOY
+
+  @@map("baby_sex")
+}
+
+enum BabyUserRole {
+  FATHER
+  MOTHER
+  CAREGIVER
+
+  @@map("baby_user_role")
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique
+  displayName        String?   @map("display_name")
+  authProvider       String    @map("auth_provider")
+  authProviderUserId String    @map("auth_provider_user_id")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  babyAccesses BabyUser[]
+  createdBabies Baby[]     @relation("BabyCreatedBy")
+
+  @@unique([authProvider, authProviderUserId])
+  @@map("users")
+}
+
+model Baby {
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String
+  birthdate       DateTime  @db.Date
+  sex             BabySex   @default(BOY)
+  timezone        String
+  avatarObjectKey String?   @map("avatar_object_key")
+  createdById     String    @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy User       @relation("BabyCreatedBy", fields: [createdById], references: [id])
+  users     BabyUser[]
+
+  @@index([createdById])
+  @@map("babies")
+}
+
+model BabyUser {
+  id        String       @id @default(uuid()) @db.Uuid
+  babyId    String       @map("baby_id") @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  role      BabyUserRole
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby Baby @relation(fields: [babyId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([babyId, userId])
+  @@index([userId])
+  @@map("baby_users")
+}

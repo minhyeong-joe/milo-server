@@ -4,22 +4,33 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon index.js",
+    "dev": "dotenv -e .env.dev -- nodemon index.js",
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "db:generate": "dotenv -e .env.dev -- prisma generate",
+    "db:migrate:dev": "dotenv -e .env.dev -- prisma migrate dev",
+    "db:migrate:prod": "prisma migrate deploy",
+    "db:studio": "dotenv -e .env.dev -- prisma studio"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@supabase/supabase-js": "^2.105.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
-    "morgan": "^1.10.1"
+    "morgan": "^1.10.1",
+    "pg": "^8.20.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "dotenv-cli": "^11.0.0",
+    "nodemon": "^3.1.14",
+    "prisma": "^7.8.0"
   }
 }
