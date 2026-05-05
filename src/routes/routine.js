@@ -102,15 +102,11 @@ const routineLogParamsSchema = babyParamsSchema.extend({
 const routineDaysQuerySchema = z
 	.object({
 		startDate: dateStringSchema,
-		endDate: dateStringSchema,
+		count: z.coerce.number().int().positive().max(30).default(7),
 		includeLastLogged: z
 			.enum(["true", "false"])
 			.optional()
 			.transform((value) => value === "true"),
-	})
-	.refine((query) => query.startDate <= query.endDate, {
-		message: "endDate must be on or after startDate.",
-		path: ["endDate"],
 	});
 
 const mealFields = {
@@ -218,7 +214,7 @@ router.get("/days", async (req, res, next) => {
 			req.user.id,
 			parsedParams.data.babyId,
 			parsedQuery.data.startDate,
-			parsedQuery.data.endDate,
+			parsedQuery.data.count,
 			parsedQuery.data.includeLastLogged,
 		);
 

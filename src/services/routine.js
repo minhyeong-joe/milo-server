@@ -44,16 +44,8 @@ function addDays(dateString, days) {
 	return date.toISOString().slice(0, 10);
 }
 
-function dateRange(startDate, endDate) {
-	const dates = [];
-	let current = startDate;
-
-	while (current <= endDate) {
-		dates.push(current);
-		current = addDays(current, 1);
-	}
-
-	return dates;
+function sortDateStringsDescending(a, b) {
+	return b.localeCompare(a);
 }
 
 function queryBounds(startDate, endDate) {
@@ -328,14 +320,7 @@ async function getAffectedDailyLogs(client, baby, dates) {
 		return [];
 	}
 
-	const sortedDates = [...new Set(dates)].sort();
-
-	return getRoutineDaysForBaby(
-		client,
-		baby,
-		sortedDates[0],
-		sortedDates[sortedDates.length - 1],
-	);
+	return getRoutineDaysForDates(client, baby, dates);
 }
 
 function normalizeNotes(notes) {
@@ -404,7 +389,7 @@ export async function getRoutineDaysForUser(
 	userId,
 	babyId,
 	startDate,
-	endDate,
+	count = 7,
 	includeLastLogged = false,
 ) {
 	const baby = await findAccessibleBaby(userId, babyId);
@@ -413,15 +398,15 @@ export async function getRoutineDaysForUser(
 		return null;
 	}
 
-	const dailyLogs = await getRoutineDaysForBaby(prisma, baby, startDate, endDate);
+	const result = await getSparseRoutineDaysForBaby(prisma, baby, startDate, count);
 
 	if (!includeLastLogged) {
-		return { dailyLogs };
+		return result;
 	}
 
 	return {
+		...result,
 		lastLogged: await getLastLoggedForBaby(prisma, baby.id),
-		dailyLogs,
 	};
 }
 
@@ -477,15 +462,71 @@ async function getLastLoggedForBaby(client, babyId) {
 	};
 }
 
-async function getRoutineDaysForBaby(client, baby, startDate, endDate) {
-	const dates = dateRange(startDate, endDate);
-	const rows = await loadRowsForDates(client, baby.id, startDate, endDate);
+async function getSparseRoutineDaysForBaby(client, baby, startDate, count) {
+	const rows = await loadRowsForDates(
+		client,
+		baby.id,
+		baby.birthdate.toISOString().slice(0, 10),
+		startDate,
+	);
+	const activeDates = getActiveDatesFromRows(rows, baby.timezone)
+		.filter((date) => date <= startDate)
+		.sort(sortDateStringsDescending);
+	const dates = activeDates.slice(0, count);
+	const nextStartDate = activeDates[count] ?? null;
+
+	return {
+		dailyLogs: await buildRoutineDaysForDates(client, baby, dates, rows),
+		nextStartDate,
+	};
+}
+
+async function getRoutineDaysForDates(client, baby, dates) {
+	const uniqueDates = [...new Set(dates)].filter(Boolean).sort();
+
+	if (uniqueDates.length === 0) {
+		return [];
+	}
+
+	return buildRoutineDaysForDates(
+		client,
+		baby,
+		uniqueDates,
+		await loadRowsForDates(client, baby.id, uniqueDates[0], uniqueDates[uniqueDates.length - 1]),
+	);
+}
+
+function getActiveDatesFromRows(rows, timezone) {
+	const dates = new Set();
+
+	for (const meal of rows.meals) {
+		dates.add(localDateForInstant(meal.loggedAt, timezone));
+	}
+
+	for (const diaper of rows.diapers) {
+		dates.add(localDateForInstant(diaper.loggedAt, timezone));
+	}
+
+	for (const sleep of rows.sleeps) {
+		dates.add(getSleepRoutineDate(sleep, timezone));
+	}
+
+	return [...dates];
+}
+
+async function buildRoutineDaysForDates(client, baby, dates, rows) {
+	if (dates.length === 0) {
+		return [];
+	}
+
+	const sortedDates = [...dates].sort();
+	const datesByKey = new Set(dates);
 	const summaries = await client.dailyRoutineSummary.findMany({
 		where: {
 			babyId: baby.id,
 			summaryDate: {
-				gte: dateOnly(startDate),
-				lte: dateOnly(endDate),
+				gte: dateOnly(sortedDates[0]),
+				lte: dateOnly(sortedDates[sortedDates.length - 1]),
 			},
 		},
 	});
@@ -501,7 +542,9 @@ async function getRoutineDaysForBaby(client, baby, startDate, endDate) {
 			value: serializeMeal(meal),
 		};
 		const date = getEventRoutineDate({ kind: "meal", ...event }, baby.timezone);
-		eventsByDate.get(date)?.push(event);
+		if (datesByKey.has(date)) {
+			eventsByDate.get(date)?.push(event);
+		}
 	}
 
 	for (const diaper of rows.diapers) {
@@ -511,7 +554,9 @@ async function getRoutineDaysForBaby(client, baby, startDate, endDate) {
 			value: serializeDiaper(diaper),
 		};
 		const date = getEventRoutineDate({ kind: "diaper", ...event }, baby.timezone);
-		eventsByDate.get(date)?.push(event);
+		if (datesByKey.has(date)) {
+			eventsByDate.get(date)?.push(event);
+		}
 	}
 
 	for (const sleep of rows.sleeps) {
@@ -521,10 +566,12 @@ async function getRoutineDaysForBaby(client, baby, startDate, endDate) {
 			value: serializeSleep(sleep),
 		};
 		const date = getEventRoutineDate({ kind: "sleep", ...event }, baby.timezone);
-		eventsByDate.get(date)?.push(event);
+		if (datesByKey.has(date)) {
+			eventsByDate.get(date)?.push(event);
+		}
 	}
 
-	return [...dates].reverse().map((date) => {
+	return [...dates].sort(sortDateStringsDescending).map((date) => {
 		const summary = summariesByDate.get(date);
 		const timeline = eventsByDate
 			.get(date)
