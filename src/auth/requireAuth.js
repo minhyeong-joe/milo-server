@@ -3,32 +3,8 @@ import {
 	findAppUserForSupabaseUser,
 	syncSupabaseUser,
 } from "../services/users.js";
-
-function sendError(res, status, code, message, details = {}) {
-	return res.status(status).json({
-		error: {
-			code,
-			message,
-			details,
-		},
-	});
-}
-
-function getBearerToken(req) {
-	const header = req.get("authorization");
-
-	if (!header) {
-		return null;
-	}
-
-	const [scheme, token] = header.split(" ");
-
-	if (scheme?.toLowerCase() !== "bearer" || !token) {
-		return null;
-	}
-
-	return token;
-}
+import { sendError } from "../http/errors.js";
+import { getBearerToken } from "./tokens.js";
 
 export async function requireAuth(req, res, next) {
 	try {

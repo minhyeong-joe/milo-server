@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import morgan from "morgan";
+import { errorHandler, notFoundHandler } from "./src/http/errors.js";
 
 dotenv.config({ path: ".env.dev" });
 dotenv.config();
@@ -46,7 +47,7 @@ app.get("/health", async (req, res) => {
 		});
 	} catch (error) {
 		console.error("Database connection error:", error);
-		res.status(503).json({
+		return res.status(503).json({
 			status: "error",
 			uptime: process.uptime(),
 			database: {
@@ -64,27 +65,8 @@ app.get("/health", async (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/babies", babiesRouter);
 
-app.use((req, res) => {
-	res.status(404).json({
-		error: {
-			code: "NOT_FOUND",
-			message: "Not found",
-			details: {},
-		},
-	});
-});
-
-app.use((err, req, res, next) => {
-	console.error(err);
-	res.status(err.status || 500).json({
-		error: {
-			code: "INTERNAL_SERVER_ERROR",
-			message:
-				process.env.NODE_ENV === "prod" ? "Internal server error" : err.message,
-			details: {},
-		},
-	});
-});
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 app.listen(PORT, () => {
 	console.log(`Server is running on http://localhost:${PORT}`);
