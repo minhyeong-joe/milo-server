@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
+import { requireAuth } from "../auth/requireAuth.js";
 import { getSupabaseAuthClient } from "../auth/supabase.js";
-import {
-	findAppUserForSupabaseUser,
-	syncSupabaseUser,
-} from "../services/users.js";
+import { sendError } from "../http/errors.js";
+import { parseBody } from "../http/validation.js";
+import { syncSupabaseUser } from "../services/users.js";
 
 const router = Router();
 
@@ -18,32 +18,6 @@ const signinSchema = z.object({
 	email: z.email().transform((email) => email.trim().toLowerCase()),
 	password: z.string().min(1),
 });
-
-function sendError(res, status, code, message, details = {}) {
-	return res.status(status).json({
-		error: {
-			code,
-			message,
-			details,
-		},
-	});
-}
-
-function parseBody(schema, body) {
-	const result = schema.safeParse(body);
-
-	if (!result.success) {
-		return {
-			error: {
-				code: "VALIDATION_ERROR",
-				message: "Request body is invalid.",
-				details: z.treeifyError(result.error),
-			},
-		};
-	}
-
-	return { data: result.data };
-}
 
 function isInvalidCredentialsError(error) {
 	const message = error?.message?.toLowerCase() ?? "";
@@ -78,22 +52,6 @@ function serializeSession(session) {
 		expiresAt: session.expires_at,
 		tokenType: session.token_type,
 	};
-}
-
-function getBearerToken(req) {
-	const header = req.get("authorization");
-
-	if (!header) {
-		return null;
-	}
-
-	const [scheme, token] = header.split(" ");
-
-	if (scheme?.toLowerCase() !== "bearer" || !token) {
-		return null;
-	}
-
-	return token;
 }
 
 router.post("/signup", async (req, res, next) => {
@@ -195,37 +153,10 @@ router.post("/signin", async (req, res, next) => {
 	}
 });
 
-router.get("/me", async (req, res, next) => {
+router.get("/me", requireAuth, async (req, res, next) => {
 	try {
-		const accessToken = getBearerToken(req);
-
-		if (!accessToken) {
-			return sendError(
-				res,
-				401,
-				"AUTH_TOKEN_REQUIRED",
-				"Bearer access token is required.",
-			);
-		}
-
-		const supabase = getSupabaseAuthClient();
-		const { data, error } = await supabase.auth.getUser(accessToken);
-
-		if (error || !data.user) {
-			return sendError(
-				res,
-				401,
-				"INVALID_AUTH_TOKEN",
-				"Auth token is invalid.",
-			);
-		}
-
-		const appUser =
-			(await findAppUserForSupabaseUser(data.user)) ??
-			(await syncSupabaseUser(data.user));
-
 		return res.json({
-			user: appUser,
+			user: req.user,
 		});
 	} catch (error) {
 		next(error);

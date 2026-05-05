@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth/requireAuth.js";
+import { sendError } from "../http/errors.js";
+import { parseBody, parseParams } from "../http/validation.js";
 import {
 	createBabyForUser,
 	deleteBabyForUser,
@@ -31,31 +33,9 @@ const createBabySchema = z.object({
 	role: z.enum(["FATHER", "MOTHER", "CAREGIVER"]).default("MOTHER"),
 });
 
-function sendError(res, status, code, message, details = {}) {
-	return res.status(status).json({
-		error: {
-			code,
-			message,
-			details,
-		},
-	});
-}
-
-function parseBody(schema, body) {
-	const result = schema.safeParse(body);
-
-	if (!result.success) {
-		return {
-			error: {
-				code: "VALIDATION_ERROR",
-				message: "Request body is invalid.",
-				details: z.treeifyError(result.error),
-			},
-		};
-	}
-
-	return { data: result.data };
-}
+const babyIdParamsSchema = z.object({
+	babyId: z.uuid(),
+});
 
 router.use(requireAuth);
 
@@ -93,19 +73,19 @@ router.post("/", async (req, res, next) => {
 
 router.delete("/:babyId", async (req, res, next) => {
 	try {
-		const { babyId } = req.params;
-		const babyIdResult = z.uuid().safeParse(babyId);
+		const parsed = parseParams(babyIdParamsSchema, req.params);
 
-		if (!babyIdResult.success) {
+		if (parsed.error) {
 			return sendError(
 				res,
 				400,
-				"VALIDATION_ERROR",
-				"Baby ID must be a valid UUID.",
-				z.treeifyError(babyIdResult.error),
+				parsed.error.code,
+				parsed.error.message,
+				parsed.error.details,
 			);
 		}
 
+		const { babyId } = parsed.data;
 		const deleted = await deleteBabyForUser(req.user.id, babyId);
 
 		if (!deleted) {
