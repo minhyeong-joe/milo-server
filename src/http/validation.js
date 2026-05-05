@@ -23,3 +23,7 @@ export function parseBody(schema, body) {
 export function parseParams(schema, params) {
 	return parseSchema(schema, params, "Request params are invalid.");
 }
+
+export function parseQuery(schema, query) {
+	return parseSchema(schema, query, "Request query is invalid.");
+}

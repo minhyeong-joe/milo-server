@@ -1,0 +1,708 @@
+import prisma from "../db/prisma.js";
+import { findAccessibleBaby } from "./babyAccess.js";
+
+const EMPTY_SUMMARY = {
+	meals: {
+		totalCount: 0,
+		byType: {
+			breastfeed: { count: 0, totalMinutes: 0 },
+			breastMilk: { count: 0, totalAmountMl: 0 },
+			formula: { count: 0, totalAmountMl: 0 },
+			solid: { count: 0, totalBowls: 0 },
+		},
+	},
+	diapers: {
+		totalChanges: 0,
+		byType: {
+			wet: 0,
+			dirty: 0,
+			both: 0,
+			dry: 0,
+		},
+	},
+	sleep: {
+		totalSessions: 0,
+		totalMinutes: 0,
+		byType: {
+			nap: { count: 0, totalMinutes: 0 },
+			nighttime: { count: 0, totalMinutes: 0 },
+		},
+	},
+};
+
+function cloneSummary() {
+	return structuredClone(EMPTY_SUMMARY);
+}
+
+function dateOnly(value) {
+	return new Date(`${value}T00:00:00.000Z`);
+}
+
+function addDays(dateString, days) {
+	const date = dateOnly(dateString);
+	date.setUTCDate(date.getUTCDate() + days);
+	return date.toISOString().slice(0, 10);
+}
+
+function dateRange(startDate, endDate) {
+	const dates = [];
+	let current = startDate;
+
+	while (current <= endDate) {
+		dates.push(current);
+		current = addDays(current, 1);
+	}
+
+	return dates;
+}
+
+function queryBounds(startDate, endDate) {
+	return {
+		start: dateOnly(addDays(startDate, -2)),
+		end: dateOnly(addDays(endDate, 3)),
+	};
+}
+
+function localDateForInstant(value, timezone) {
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone: timezone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	}).formatToParts(value);
+	const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+	return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+function serializeBaby(baby) {
+	return {
+		id: baby.id,
+		name: baby.name,
+		birthdate: baby.birthdate.toISOString().slice(0, 10),
+		timezone: baby.timezone,
+	};
+}
+
+function serializeMeal(row) {
+	return {
+		id: row.id,
+		kind: "meal",
+		time: row.loggedAt.toISOString(),
+		type: row.mealType,
+		amountMl: row.amountMl,
+		durationMinutes: row.durationMinutes,
+		amountBowl: row.amountBowl === null ? null : Number(row.amountBowl),
+		amountGrams: row.amountGrams,
+		notes: row.notes,
+	};
+}
+
+function serializeDiaper(row) {
+	return {
+		id: row.id,
+		kind: "diaper",
+		time: row.loggedAt.toISOString(),
+		type: row.diaperType,
+		color: row.color,
+		notes: row.notes,
+	};
+}
+
+function serializeSleep(row) {
+	return {
+		id: row.id,
+		kind: "sleep",
+		type: row.sleepType,
+		startTime: row.startTime.toISOString(),
+		endTime: row.endTime ? row.endTime.toISOString() : null,
+		notes: row.notes,
+	};
+}
+
+function getSleepRoutineDate(row, timezone) {
+	if (row.sleepType === "nighttime" && row.endTime) {
+		return localDateForInstant(row.endTime, timezone);
+	}
+
+	return localDateForInstant(row.startTime, timezone);
+}
+
+function getEventRoutineDate(event, timezone) {
+	if (event.kind === "sleep") {
+		return getSleepRoutineDate(event.raw, timezone);
+	}
+
+	return localDateForInstant(event.sortTime, timezone);
+}
+
+function getSummaryForRows({ meals, diapers, sleeps }, timezone, targetDate) {
+	const summary = cloneSummary();
+
+	for (const meal of meals) {
+		if (localDateForInstant(meal.loggedAt, timezone) !== targetDate) {
+			continue;
+		}
+
+		summary.meals.totalCount += 1;
+		const typeSummary = summary.meals.byType[meal.mealType];
+		typeSummary.count += 1;
+
+		if (meal.mealType === "breastfeed") {
+			typeSummary.totalMinutes += meal.durationMinutes ?? 0;
+		} else if (meal.mealType === "solid") {
+			typeSummary.totalBowls += meal.amountBowl === null ? 0 : Number(meal.amountBowl);
+		} else {
+			typeSummary.totalAmountMl += meal.amountMl ?? 0;
+		}
+	}
+
+	for (const diaper of diapers) {
+		if (localDateForInstant(diaper.loggedAt, timezone) !== targetDate) {
+			continue;
+		}
+
+		summary.diapers.totalChanges += 1;
+		summary.diapers.byType[diaper.diaperType] += 1;
+	}
+
+	for (const sleep of sleeps) {
+		if (!sleep.endTime || getSleepRoutineDate(sleep, timezone) !== targetDate) {
+			continue;
+		}
+
+		const minutes = Math.max(
+			0,
+			Math.round((sleep.endTime.getTime() - sleep.startTime.getTime()) / 60000),
+		);
+
+		summary.sleep.totalSessions += 1;
+		summary.sleep.totalMinutes += minutes;
+		summary.sleep.byType[sleep.sleepType].count += 1;
+		summary.sleep.byType[sleep.sleepType].totalMinutes += minutes;
+	}
+
+	return summary;
+}
+
+async function loadRowsForDates(client, babyId, startDate, endDate) {
+	const bounds = queryBounds(startDate, endDate);
+	const [meals, diapers, sleeps] = await Promise.all([
+		client.routineMealEvent.findMany({
+			where: {
+				babyId,
+				loggedAt: {
+					gte: bounds.start,
+					lt: bounds.end,
+				},
+			},
+		}),
+		client.routineDiaperEvent.findMany({
+			where: {
+				babyId,
+				loggedAt: {
+					gte: bounds.start,
+					lt: bounds.end,
+				},
+			},
+		}),
+		client.sleepSession.findMany({
+			where: {
+				babyId,
+				OR: [
+					{
+						startTime: {
+							gte: bounds.start,
+							lt: bounds.end,
+						},
+					},
+					{
+						endTime: {
+							gte: bounds.start,
+							lt: bounds.end,
+						},
+					},
+				],
+			},
+		}),
+	]);
+
+	return { meals, diapers, sleeps };
+}
+
+async function recomputeSummaries(client, baby, dates) {
+	const uniqueDates = [...new Set(dates)].filter(Boolean).sort();
+
+	if (uniqueDates.length === 0) {
+		return;
+	}
+
+	const rows = await loadRowsForDates(
+		client,
+		baby.id,
+		uniqueDates[0],
+		uniqueDates[uniqueDates.length - 1],
+	);
+	const computedAt = new Date();
+
+	await Promise.all(
+		uniqueDates.map((summaryDate) => {
+			const summary = getSummaryForRows(rows, baby.timezone, summaryDate);
+
+			return client.dailyRoutineSummary.upsert({
+				where: {
+					babyId_summaryDate: {
+						babyId: baby.id,
+						summaryDate: dateOnly(summaryDate),
+					},
+				},
+				create: {
+					babyId: baby.id,
+					summaryDate: dateOnly(summaryDate),
+					mealSummaryJson: summary.meals,
+					diaperSummaryJson: summary.diapers,
+					sleepSummaryJson: summary.sleep,
+					computedAt,
+				},
+				update: {
+					mealSummaryJson: summary.meals,
+					diaperSummaryJson: summary.diapers,
+					sleepSummaryJson: summary.sleep,
+					computedAt,
+				},
+			});
+		}),
+	);
+}
+
+function summaryDateForMeal(row, timezone) {
+	return localDateForInstant(row.loggedAt, timezone);
+}
+
+function summaryDateForDiaper(row, timezone) {
+	return localDateForInstant(row.loggedAt, timezone);
+}
+
+function summaryDateForSleep(row, timezone) {
+	if (!row.endTime) {
+		return null;
+	}
+
+	return getSleepRoutineDate(row, timezone);
+}
+
+function getSummaryForStoredRow(kind, row, timezone) {
+	if (!row) {
+		return null;
+	}
+
+	if (kind === "meal") {
+		return summaryDateForMeal(row, timezone);
+	}
+
+	if (kind === "diaper") {
+		return summaryDateForDiaper(row, timezone);
+	}
+
+	return summaryDateForSleep(row, timezone);
+}
+
+function getTimelineDateForStoredRow(kind, row, timezone) {
+	if (!row) {
+		return null;
+	}
+
+	if (kind === "meal") {
+		return summaryDateForMeal(row, timezone);
+	}
+
+	if (kind === "diaper") {
+		return summaryDateForDiaper(row, timezone);
+	}
+
+	return getSleepRoutineDate(row, timezone);
+}
+
+async function getAffectedDailyLogs(client, baby, dates) {
+	if (dates.length === 0) {
+		return [];
+	}
+
+	const sortedDates = [...new Set(dates)].sort();
+
+	return getRoutineDaysForBaby(
+		client,
+		baby,
+		sortedDates[0],
+		sortedDates[sortedDates.length - 1],
+	);
+}
+
+function normalizeNotes(notes) {
+	if (notes === undefined) {
+		return undefined;
+	}
+
+	const trimmed = notes.trim();
+	return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeMealInput(input) {
+	const base = {
+		loggedAt: new Date(input.time),
+		mealType: input.type,
+		amountMl: null,
+		durationMinutes: null,
+		amountBowl: null,
+		amountGrams: null,
+		notes: normalizeNotes(input.notes),
+	};
+
+	if (input.type === "breastfeed") {
+		base.durationMinutes = input.durationMinutes;
+	} else if (input.type === "solid") {
+		base.amountBowl = input.amountBowl;
+		base.amountGrams = input.amountGrams ?? null;
+	} else {
+		base.amountMl = input.amountMl;
+	}
+
+	return base;
+}
+
+function normalizeDiaperInput(input) {
+	return {
+		loggedAt: new Date(input.time),
+		diaperType: input.type,
+		color: input.type === "dirty" || input.type === "both" ? input.color ?? null : null,
+		notes: normalizeNotes(input.notes),
+	};
+}
+
+function normalizeSleepInput(input) {
+	return {
+		sleepType: input.type,
+		startTime: new Date(input.startTime),
+		endTime: input.endTime ? new Date(input.endTime) : null,
+		notes: normalizeNotes(input.notes),
+	};
+}
+
+async function assertNoOtherActiveSleep(client, babyId, excludedId = null) {
+	const existing = await client.sleepSession.findFirst({
+		where: {
+			babyId,
+			endTime: null,
+			...(excludedId ? { id: { not: excludedId } } : {}),
+		},
+	});
+
+	return !existing;
+}
+
+export async function getRoutineDaysForUser(
+	userId,
+	babyId,
+	startDate,
+	endDate,
+	includeLastLogged = false,
+) {
+	const baby = await findAccessibleBaby(userId, babyId);
+
+	if (!baby) {
+		return null;
+	}
+
+	const dailyLogs = await getRoutineDaysForBaby(prisma, baby, startDate, endDate);
+
+	if (!includeLastLogged) {
+		return { dailyLogs };
+	}
+
+	return {
+		lastLogged: await getLastLoggedForBaby(prisma, baby.id),
+		dailyLogs,
+	};
+}
+
+async function getLastLoggedForBaby(client, babyId) {
+	const [meal, diaper, activeSleep, completedSleep] = await Promise.all([
+		client.routineMealEvent.findFirst({
+			where: { babyId },
+			orderBy: { loggedAt: "desc" },
+		}),
+		client.routineDiaperEvent.findFirst({
+			where: { babyId },
+			orderBy: { loggedAt: "desc" },
+		}),
+		client.sleepSession.findFirst({
+			where: {
+				babyId,
+				endTime: null,
+			},
+			orderBy: { startTime: "desc" },
+		}),
+		client.sleepSession.findFirst({
+			where: {
+				babyId,
+				endTime: { not: null },
+			},
+			orderBy: { endTime: "desc" },
+		}),
+	]);
+	const sleep = activeSleep ?? completedSleep;
+
+	return {
+		meal: meal
+			? {
+					time: meal.loggedAt.toISOString(),
+					type: meal.mealType,
+				}
+			: null,
+		diaper: diaper
+			? {
+					time: diaper.loggedAt.toISOString(),
+					type: diaper.diaperType,
+				}
+			: null,
+		sleep: sleep
+			? {
+					startTime: sleep.startTime.toISOString(),
+					endTime: sleep.endTime ? sleep.endTime.toISOString() : null,
+					type: sleep.sleepType,
+					isActive: !sleep.endTime,
+					lastLoggedAt: (sleep.endTime ?? sleep.startTime).toISOString(),
+				}
+			: null,
+	};
+}
+
+async function getRoutineDaysForBaby(client, baby, startDate, endDate) {
+	const dates = dateRange(startDate, endDate);
+	const rows = await loadRowsForDates(client, baby.id, startDate, endDate);
+	const summaries = await client.dailyRoutineSummary.findMany({
+		where: {
+			babyId: baby.id,
+			summaryDate: {
+				gte: dateOnly(startDate),
+				lte: dateOnly(endDate),
+			},
+		},
+	});
+	const summariesByDate = new Map(
+		summaries.map((summary) => [summary.summaryDate.toISOString().slice(0, 10), summary]),
+	);
+	const eventsByDate = new Map(dates.map((date) => [date, []]));
+
+	for (const meal of rows.meals) {
+		const event = {
+			sortTime: meal.loggedAt,
+			raw: meal,
+			value: serializeMeal(meal),
+		};
+		const date = getEventRoutineDate({ kind: "meal", ...event }, baby.timezone);
+		eventsByDate.get(date)?.push(event);
+	}
+
+	for (const diaper of rows.diapers) {
+		const event = {
+			sortTime: diaper.loggedAt,
+			raw: diaper,
+			value: serializeDiaper(diaper),
+		};
+		const date = getEventRoutineDate({ kind: "diaper", ...event }, baby.timezone);
+		eventsByDate.get(date)?.push(event);
+	}
+
+	for (const sleep of rows.sleeps) {
+		const event = {
+			sortTime: sleep.endTime ?? sleep.startTime,
+			raw: sleep,
+			value: serializeSleep(sleep),
+		};
+		const date = getEventRoutineDate({ kind: "sleep", ...event }, baby.timezone);
+		eventsByDate.get(date)?.push(event);
+	}
+
+	return [...dates].reverse().map((date) => {
+		const summary = summariesByDate.get(date);
+		const timeline = eventsByDate
+			.get(date)
+			.sort((a, b) => b.sortTime.getTime() - a.sortTime.getTime())
+			.map((event) => event.value);
+
+		return {
+			date,
+			timeline,
+			summary: summary
+				? {
+						meals: summary.mealSummaryJson,
+						diapers: summary.diaperSummaryJson,
+						sleep: summary.sleepSummaryJson,
+					}
+				: cloneSummary(),
+		};
+	});
+}
+
+export async function createRoutineLogForUser(userId, babyId, input) {
+	return prisma.$transaction(async (tx) => {
+		const baby = await findAccessibleBaby(userId, babyId, tx);
+
+		if (!baby) {
+			return { error: "BABY_NOT_FOUND" };
+		}
+
+		let event;
+		let summaryDate;
+		let timelineDate;
+
+		if (input.kind === "meal") {
+			const row = await tx.routineMealEvent.create({
+				data: {
+					...normalizeMealInput(input),
+					babyId,
+					createdById: userId,
+				},
+			});
+			event = serializeMeal(row);
+			summaryDate = summaryDateForMeal(row, baby.timezone);
+			timelineDate = summaryDate;
+		} else if (input.kind === "diaper") {
+			const row = await tx.routineDiaperEvent.create({
+				data: {
+					...normalizeDiaperInput(input),
+					babyId,
+					createdById: userId,
+				},
+			});
+			event = serializeDiaper(row);
+			summaryDate = summaryDateForDiaper(row, baby.timezone);
+			timelineDate = summaryDate;
+		} else {
+			if (!(await assertNoOtherActiveSleep(tx, babyId))) {
+				return { error: "ACTIVE_SLEEP_EXISTS" };
+			}
+
+			const row = await tx.sleepSession.create({
+				data: {
+					...normalizeSleepInput(input),
+					babyId,
+					createdById: userId,
+				},
+			});
+			event = serializeSleep(row);
+			summaryDate = summaryDateForSleep(row, baby.timezone);
+			timelineDate = getSleepRoutineDate(row, baby.timezone);
+		}
+
+		const summaryDates = summaryDate ? [summaryDate] : [];
+		const affectedDates = timelineDate ? [timelineDate] : [];
+		await recomputeSummaries(tx, baby, summaryDates);
+
+		return {
+			event,
+			affectedDailyLogs: await getAffectedDailyLogs(tx, baby, affectedDates),
+		};
+	});
+}
+
+export async function updateRoutineLogForUser(userId, babyId, kind, id, input) {
+	return prisma.$transaction(async (tx) => {
+		const baby = await findAccessibleBaby(userId, babyId, tx);
+
+		if (!baby) {
+			return { error: "BABY_NOT_FOUND" };
+		}
+
+		let before;
+		let after;
+		let event;
+
+		if (kind === "meal") {
+			before = await tx.routineMealEvent.findFirst({ where: { id, babyId } });
+			if (!before) return { error: "ROUTINE_LOG_NOT_FOUND" };
+			after = await tx.routineMealEvent.update({
+				where: { id },
+				data: normalizeMealInput({ ...input, kind }),
+			});
+			event = serializeMeal(after);
+		} else if (kind === "diaper") {
+			before = await tx.routineDiaperEvent.findFirst({ where: { id, babyId } });
+			if (!before) return { error: "ROUTINE_LOG_NOT_FOUND" };
+			after = await tx.routineDiaperEvent.update({
+				where: { id },
+				data: normalizeDiaperInput({ ...input, kind }),
+			});
+			event = serializeDiaper(after);
+		} else {
+			before = await tx.sleepSession.findFirst({ where: { id, babyId } });
+			if (!before) return { error: "ROUTINE_LOG_NOT_FOUND" };
+			if (!input.endTime && !(await assertNoOtherActiveSleep(tx, babyId, id))) {
+				return { error: "ACTIVE_SLEEP_EXISTS" };
+			}
+			after = await tx.sleepSession.update({
+				where: { id },
+				data: normalizeSleepInput({ ...input, kind }),
+			});
+			event = serializeSleep(after);
+		}
+
+		const summaryDates = [
+			getSummaryForStoredRow(kind, before, baby.timezone),
+			getSummaryForStoredRow(kind, after, baby.timezone),
+		]
+			.filter(Boolean)
+			.sort();
+		const affectedDates = [
+			getTimelineDateForStoredRow(kind, before, baby.timezone),
+			getTimelineDateForStoredRow(kind, after, baby.timezone),
+		]
+			.filter(Boolean)
+			.sort();
+
+		await recomputeSummaries(tx, baby, summaryDates);
+
+		return {
+			event,
+			affectedDailyLogs: await getAffectedDailyLogs(tx, baby, [...new Set(affectedDates)]),
+		};
+	});
+}
+
+export async function deleteRoutineLogForUser(userId, babyId, kind, id) {
+	return prisma.$transaction(async (tx) => {
+		const baby = await findAccessibleBaby(userId, babyId, tx);
+
+		if (!baby) {
+			return { error: "BABY_NOT_FOUND" };
+		}
+
+		let before;
+
+		if (kind === "meal") {
+			before = await tx.routineMealEvent.findFirst({ where: { id, babyId } });
+			if (!before) return { error: "ROUTINE_LOG_NOT_FOUND" };
+			await tx.routineMealEvent.delete({ where: { id } });
+		} else if (kind === "diaper") {
+			before = await tx.routineDiaperEvent.findFirst({ where: { id, babyId } });
+			if (!before) return { error: "ROUTINE_LOG_NOT_FOUND" };
+			await tx.routineDiaperEvent.delete({ where: { id } });
+		} else {
+			before = await tx.sleepSession.findFirst({ where: { id, babyId } });
+			if (!before) return { error: "ROUTINE_LOG_NOT_FOUND" };
+			await tx.sleepSession.delete({ where: { id } });
+		}
+
+		const summaryDate = getSummaryForStoredRow(kind, before, baby.timezone);
+		const timelineDate = getTimelineDateForStoredRow(kind, before, baby.timezone);
+		const summaryDates = summaryDate ? [summaryDate] : [];
+		const affectedDates = timelineDate ? [timelineDate] : [];
+		await recomputeSummaries(tx, baby, summaryDates);
+
+		return {
+			deleted: true,
+			affectedDailyLogs: await getAffectedDailyLogs(tx, baby, affectedDates),
+		};
+	});
+}
