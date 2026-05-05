@@ -107,6 +107,13 @@ export async function deleteBabyForUser(userId, babyId) {
 
 	await prisma.$transaction(async (tx) => {
 		if (access.baby.createdById === userId) {
+			await Promise.all([
+				tx.routineMealEvent.deleteMany({ where: { babyId } }),
+				tx.routineDiaperEvent.deleteMany({ where: { babyId } }),
+				tx.sleepSession.deleteMany({ where: { babyId } }),
+				tx.dailyRoutineSummary.deleteMany({ where: { babyId } }),
+			]);
+
 			await tx.baby.update({
 				where: { id: babyId },
 				data: { deletedAt },

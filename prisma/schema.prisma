@@ -21,6 +21,40 @@ enum BabyUserRole {
   @@map("baby_user_role")
 }
 
+enum RoutineMealType {
+  breastfeed
+  breastMilk
+  formula
+  solid
+
+  @@map("routine_meal_type")
+}
+
+enum RoutineDiaperType {
+  wet
+  dirty
+  both
+  dry
+
+  @@map("routine_diaper_type")
+}
+
+enum RoutineDiaperColor {
+  green
+  brown
+  yellow
+  black
+
+  @@map("routine_diaper_color")
+}
+
+enum SleepType {
+  nap
+  nighttime
+
+  @@map("sleep_type")
+}
+
 model User {
   id                 String    @id @default(uuid()) @db.Uuid
   email              String    @unique
@@ -33,6 +67,9 @@ model User {
 
   babyAccesses BabyUser[]
   createdBabies Baby[]     @relation("BabyCreatedBy")
+  createdMealEvents RoutineMealEvent[] @relation("RoutineMealCreatedBy")
+  createdDiaperEvents RoutineDiaperEvent[] @relation("RoutineDiaperCreatedBy")
+  createdSleepSessions SleepSession[] @relation("SleepSessionCreatedBy")
 
   @@unique([authProvider, authProviderUserId])
   @@map("users")
@@ -52,6 +89,10 @@ model Baby {
 
   createdBy User       @relation("BabyCreatedBy", fields: [createdById], references: [id])
   users     BabyUser[]
+  mealEvents RoutineMealEvent[]
+  diaperEvents RoutineDiaperEvent[]
+  sleepSessions SleepSession[]
+  routineSummaries DailyRoutineSummary[]
 
   @@index([createdById])
   @@map("babies")
@@ -72,4 +113,83 @@ model BabyUser {
   @@unique([babyId, userId])
   @@index([userId])
   @@map("baby_users")
+}
+
+model RoutineMealEvent {
+  id              String          @id @default(uuid()) @db.Uuid
+  babyId          String          @map("baby_id") @db.Uuid
+  loggedAt        DateTime        @map("logged_at") @db.Timestamptz(6)
+  mealType        RoutineMealType @map("meal_type")
+  amountMl        Int?            @map("amount_ml")
+  durationMinutes Int?            @map("duration_minutes")
+  amountBowl      Decimal?        @map("amount_bowl") @db.Decimal(4, 2)
+  amountGrams     Int?            @map("amount_grams")
+  notes           String?
+  createdById     String          @map("created_by") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby      Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+  createdBy User @relation("RoutineMealCreatedBy", fields: [createdById], references: [id])
+
+  @@index([babyId, loggedAt])
+  @@index([createdById])
+  @@map("routine_meal_events")
+}
+
+model RoutineDiaperEvent {
+  id          String              @id @default(uuid()) @db.Uuid
+  babyId      String              @map("baby_id") @db.Uuid
+  loggedAt    DateTime            @map("logged_at") @db.Timestamptz(6)
+  diaperType  RoutineDiaperType   @map("diaper_type")
+  color       RoutineDiaperColor?
+  notes       String?
+  createdById String              @map("created_by") @db.Uuid
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby      Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+  createdBy User @relation("RoutineDiaperCreatedBy", fields: [createdById], references: [id])
+
+  @@index([babyId, loggedAt])
+  @@index([createdById])
+  @@map("routine_diaper_events")
+}
+
+model SleepSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  babyId      String    @map("baby_id") @db.Uuid
+  sleepType   SleepType @map("sleep_type")
+  startTime   DateTime  @map("start_time") @db.Timestamptz(6)
+  endTime     DateTime? @map("end_time") @db.Timestamptz(6)
+  notes       String?
+  createdById String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby      Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+  createdBy User @relation("SleepSessionCreatedBy", fields: [createdById], references: [id])
+
+  @@index([babyId, startTime])
+  @@index([babyId, endTime])
+  @@index([createdById])
+  @@map("sleep_sessions")
+}
+
+model DailyRoutineSummary {
+  id                String   @id @default(uuid()) @db.Uuid
+  babyId            String   @map("baby_id") @db.Uuid
+  summaryDate       DateTime @map("summary_date") @db.Date
+  mealSummaryJson   Json     @map("meal_summary_json")
+  diaperSummaryJson Json     @map("diaper_summary_json")
+  sleepSummaryJson  Json     @map("sleep_summary_json")
+  computedAt        DateTime @map("computed_at") @db.Timestamptz(6)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+
+  @@unique([babyId, summaryDate])
+  @@index([babyId, summaryDate])
+  @@map("daily_routine_summaries")
 }
