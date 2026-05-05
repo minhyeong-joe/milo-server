@@ -19,6 +19,10 @@ const signinSchema = z.object({
 	password: z.string().min(1),
 });
 
+const refreshSchema = z.object({
+	refreshToken: z.string().min(1),
+});
+
 function isInvalidCredentialsError(error) {
 	const message = error?.message?.toLowerCase() ?? "";
 	return (
@@ -139,6 +143,45 @@ router.post("/signin", async (req, res, next) => {
 				error.status || 400,
 				"SIGNIN_FAILED",
 				error.message,
+			);
+		}
+
+		const appUser = await syncSupabaseUser(data.user);
+
+		return res.json({
+			...serializeSession(data.session),
+			user: appUser,
+		});
+	} catch (error) {
+		next(error);
+	}
+});
+
+router.post("/refresh", async (req, res, next) => {
+	try {
+		const parsed = parseBody(refreshSchema, req.body);
+
+		if (parsed.error) {
+			return sendError(
+				res,
+				400,
+				parsed.error.code,
+				parsed.error.message,
+				parsed.error.details,
+			);
+		}
+
+		const supabase = getSupabaseAuthClient();
+		const { data, error } = await supabase.auth.refreshSession({
+			refresh_token: parsed.data.refreshToken,
+		});
+
+		if (error || !data.session || !data.user) {
+			return sendError(
+				res,
+				401,
+				"INVALID_REFRESH_TOKEN",
+				"Refresh token is invalid or expired.",
 			);
 		}
 
