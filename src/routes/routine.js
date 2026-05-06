@@ -70,16 +70,6 @@ function refineMealPayload(value, ctx) {
 	}
 }
 
-function refineDiaperPayload(value, ctx) {
-	if ((value.type === "dirty" || value.type === "both") && value.color === undefined) {
-		ctx.addIssue({
-			code: "custom",
-			path: ["color"],
-			message: "color is required for dirty or both diapers.",
-		});
-	}
-}
-
 function refineSleepPayload(value, ctx) {
 	if (value.endTime && new Date(value.endTime).getTime() < new Date(value.startTime).getTime()) {
 		ctx.addIssue({
@@ -137,9 +127,7 @@ const mealPayloadSchema = z
 	.object({ kind: z.literal("meal"), ...mealFields })
 	.superRefine(refineMealPayload);
 
-const diaperPayloadSchema = z
-	.object({ kind: z.literal("diaper"), ...diaperFields })
-	.superRefine(refineDiaperPayload);
+const diaperPayloadSchema = z.object({ kind: z.literal("diaper"), ...diaperFields });
 
 const sleepPayloadSchema = z
 	.object({ kind: z.literal("sleep"), ...sleepFields })
@@ -153,7 +141,7 @@ const createRoutineLogSchema = z.discriminatedUnion("kind", [
 
 const updateSchemasByKind = {
 	meal: z.object(mealFields).superRefine(refineMealPayload),
-	diaper: z.object(diaperFields).superRefine(refineDiaperPayload),
+	diaper: z.object(diaperFields),
 	sleep: z.object(sleepFields).superRefine(refineSleepPayload),
 };
 

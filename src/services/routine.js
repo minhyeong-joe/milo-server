@@ -452,6 +452,7 @@ async function getLastLoggedForBaby(client, babyId) {
 			: null,
 		sleep: sleep
 			? {
+					id: sleep.id,
 					startTime: sleep.startTime.toISOString(),
 					endTime: sleep.endTime ? sleep.endTime.toISOString() : null,
 					type: sleep.sleepType,
@@ -650,6 +651,7 @@ export async function createRoutineLogForUser(userId, babyId, input) {
 		return {
 			event,
 			affectedDailyLogs: await getAffectedDailyLogs(tx, baby, affectedDates),
+			lastLogged: await getLastLoggedForBaby(tx, baby.id),
 		};
 	});
 }
@@ -713,6 +715,7 @@ export async function updateRoutineLogForUser(userId, babyId, kind, id, input) {
 		return {
 			event,
 			affectedDailyLogs: await getAffectedDailyLogs(tx, baby, [...new Set(affectedDates)]),
+			lastLogged: await getLastLoggedForBaby(tx, baby.id),
 		};
 	});
 }
@@ -750,6 +753,7 @@ export async function deleteRoutineLogForUser(userId, babyId, kind, id) {
 		return {
 			deleted: true,
 			affectedDailyLogs: await getAffectedDailyLogs(tx, baby, affectedDates),
+			lastLogged: await getLastLoggedForBaby(tx, baby.id),
 		};
 	});
 }
