@@ -116,6 +116,7 @@ const mealFields = {
 	durationMinutes: z.number().int().positive().optional(),
 	amountBowl: amountBowlSchema.optional(),
 	amountGrams: z.number().int().positive().optional(),
+	breastSide: z.enum(["left", "right"]).optional(),
 	notes: notesSchema,
 };
 

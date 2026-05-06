@@ -30,6 +30,13 @@ enum RoutineMealType {
   @@map("routine_meal_type")
 }
 
+enum BreastSide {
+  left
+  right
+
+  @@map("breast_side")
+}
+
 enum RoutineDiaperType {
   wet
   dirty
@@ -124,6 +131,7 @@ model RoutineMealEvent {
   durationMinutes Int?            @map("duration_minutes")
   amountBowl      Decimal?        @map("amount_bowl") @db.Decimal(4, 2)
   amountGrams     Int?            @map("amount_grams")
+  breastSide      BreastSide?     @map("breast_side")  
   notes           String?
   clientMutationId String?         @unique @map("client_mutation_id")
   createdById     String          @map("created_by") @db.Uuid

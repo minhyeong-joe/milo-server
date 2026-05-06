@@ -86,6 +86,7 @@ function serializeMeal(row) {
 		durationMinutes: row.durationMinutes,
 		amountBowl: row.amountBowl === null ? null : Number(row.amountBowl),
 		amountGrams: row.amountGrams,
+		breastSide: row.breastSide === null? null : row.breastSide,
 		notes: row.notes,
 	};
 }
@@ -381,11 +382,13 @@ function normalizeMealInput(input) {
 		durationMinutes: null,
 		amountBowl: null,
 		amountGrams: null,
+		breastSide: null,
 		notes: normalizeNotes(input.notes),
 	};
 
 	if (input.type === "breastfeed") {
 		base.durationMinutes = input.durationMinutes;
+		base.breastSide = input.breastSide ?? null;
 	} else if (input.type === "solid") {
 		base.amountBowl = input.amountBowl ?? null;
 		base.amountGrams = input.amountGrams ?? null;
