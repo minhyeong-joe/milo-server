@@ -11,11 +11,13 @@ dotenv.config();
 const [
 	{ default: authRouter },
 	{ default: babiesRouter },
+	{ default: growthRouter },
 	{ default: routineRouter },
 	{ default: prisma },
 ] = await Promise.all([
 	import("./src/routes/auth.js"),
 	import("./src/routes/babies.js"),
+	import("./src/routes/growth.js"),
 	import("./src/routes/routine.js"),
 	import("./src/db/prisma.js"),
 ]);
@@ -65,6 +67,7 @@ app.get("/health", async (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/babies/:babyId/growth", growthRouter);
 app.use("/api/babies/:babyId/routine", routineRouter);
 app.use("/api/babies", babiesRouter);
 

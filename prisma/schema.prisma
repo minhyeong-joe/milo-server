@@ -100,6 +100,7 @@ model Baby {
   diaperEvents RoutineDiaperEvent[]
   sleepSessions SleepSession[]
   routineSummaries DailyRoutineSummary[]
+  growthRecords BabyGrowth[]
 
   @@index([createdById])
   @@map("babies")
@@ -203,4 +204,21 @@ model DailyRoutineSummary {
   @@unique([babyId, summaryDate])
   @@index([babyId, summaryDate])
   @@map("daily_routine_summaries")
+}
+
+model BabyGrowth {
+  id                  String   @id @default(uuid()) @db.Uuid
+  babyId              String   @map("baby_id") @db.Uuid
+  heightMm            Int? @map("height_mm")
+  weightGrams         Int? @map("weight_grams")
+  headCircumferenceMm Int? @map("head_circumference_mm")
+  notes               String?
+  measuredAt          DateTime @map("measured_at") @db.Timestamptz(6)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+  
+  @@index([babyId, measuredAt])
+  @@map("baby_growth")
 }
