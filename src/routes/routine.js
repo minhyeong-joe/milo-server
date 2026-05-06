@@ -62,11 +62,19 @@ function refineMealPayload(value, ctx) {
 		});
 	}
 
-	if (value.type === "solid" && value.amountBowl === undefined) {
+	if (value.type === "solid" && value.amountBowl === undefined && value.amountGrams === undefined) {
 		ctx.addIssue({
 			code: "custom",
 			path: ["amountBowl"],
-			message: "amountBowl is required for solid meals.",
+			message: "amountBowl or amountGrams is required for solid meals.",
+		});
+	}
+
+	if (value.type === "solid" && value.amountBowl !== undefined && value.amountGrams !== undefined) {
+		ctx.addIssue({
+			code: "custom",
+			path: ["amountGrams"],
+			message: "Use either amountBowl or amountGrams for solid meals, not both.",
 		});
 	}
 }

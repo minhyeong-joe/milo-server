@@ -8,7 +8,7 @@ const EMPTY_SUMMARY = {
 			breastfeed: { count: 0, totalMinutes: 0 },
 			breastMilk: { count: 0, totalAmountMl: 0 },
 			formula: { count: 0, totalAmountMl: 0 },
-			solid: { count: 0, totalBowls: 0 },
+			solid: { count: 0, totalBowls: 0, totalGrams: 0 },
 		},
 	},
 	diapers: {
@@ -144,6 +144,7 @@ function getSummaryForRows({ meals, diapers, sleeps }, timezone, targetDate) {
 			typeSummary.totalMinutes += meal.durationMinutes ?? 0;
 		} else if (meal.mealType === "solid") {
 			typeSummary.totalBowls += meal.amountBowl === null ? 0 : Number(meal.amountBowl);
+			typeSummary.totalGrams += meal.amountGrams ?? 0;
 		} else {
 			typeSummary.totalAmountMl += meal.amountMl ?? 0;
 		}
