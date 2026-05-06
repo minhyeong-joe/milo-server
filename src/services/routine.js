@@ -299,6 +299,45 @@ function getSummaryForStoredRow(kind, row, timezone) {
 	return summaryDateForSleep(row, timezone);
 }
 
+async function getExistingCreateByClientMutationId(client, babyId, kind, clientMutationId) {
+	if (!clientMutationId) {
+		return null;
+	}
+
+	if (kind === "meal") {
+		return client.routineMealEvent.findFirst({ where: { babyId, clientMutationId } });
+	}
+
+	if (kind === "diaper") {
+		return client.routineDiaperEvent.findFirst({ where: { babyId, clientMutationId } });
+	}
+
+	return client.sleepSession.findFirst({ where: { babyId, clientMutationId } });
+}
+
+function serializeStoredRoutineRow(kind, row) {
+	if (kind === "meal") {
+		return serializeMeal(row);
+	}
+
+	if (kind === "diaper") {
+		return serializeDiaper(row);
+	}
+
+	return serializeSleep(row);
+}
+
+async function getMutationResponseForStoredRow(client, baby, kind, row) {
+	const timelineDate = getTimelineDateForStoredRow(kind, row, baby.timezone);
+	const affectedDates = timelineDate ? [timelineDate] : [];
+
+	return {
+		event: serializeStoredRoutineRow(kind, row),
+		affectedDailyLogs: await getAffectedDailyLogs(client, baby, affectedDates),
+		lastLogged: await getLastLoggedForBaby(client, baby.id),
+	};
+}
+
 function getTimelineDateForStoredRow(kind, row, timezone) {
 	if (!row) {
 		return null;
@@ -334,6 +373,7 @@ function normalizeNotes(notes) {
 
 function normalizeMealInput(input) {
 	const base = {
+		clientMutationId: input.clientMutationId,
 		loggedAt: new Date(input.time),
 		mealType: input.type,
 		amountMl: null,
@@ -357,6 +397,7 @@ function normalizeMealInput(input) {
 
 function normalizeDiaperInput(input) {
 	return {
+		clientMutationId: input.clientMutationId,
 		loggedAt: new Date(input.time),
 		diaperType: input.type,
 		color: input.type === "dirty" || input.type === "both" ? input.color ?? null : null,
@@ -366,6 +407,7 @@ function normalizeDiaperInput(input) {
 
 function normalizeSleepInput(input) {
 	return {
+		clientMutationId: input.clientMutationId,
 		sleepType: input.type,
 		startTime: new Date(input.startTime),
 		endTime: input.endTime ? new Date(input.endTime) : null,
@@ -599,6 +641,17 @@ export async function createRoutineLogForUser(userId, babyId, input) {
 
 		if (!baby) {
 			return { error: "BABY_NOT_FOUND" };
+		}
+
+		const existingRow = await getExistingCreateByClientMutationId(
+			tx,
+			babyId,
+			input.kind,
+			input.clientMutationId,
+		);
+
+		if (existingRow) {
+			return getMutationResponseForStoredRow(tx, baby, input.kind, existingRow);
 		}
 
 		let event;

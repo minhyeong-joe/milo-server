@@ -43,6 +43,7 @@ const amountBowlSchema = z.union([
 	z.literal(0.75),
 	z.literal(1),
 ]);
+const clientMutationIdSchema = z.uuid().optional();
 
 function refineMealPayload(value, ctx) {
 	if (value.type === "breastfeed" && value.durationMinutes === undefined) {
@@ -100,6 +101,7 @@ const routineDaysQuerySchema = z
 	});
 
 const mealFields = {
+	clientMutationId: clientMutationIdSchema,
 	time: isoDateTimeSchema,
 	type: mealTypeSchema,
 	amountMl: z.number().int().positive().optional(),
@@ -110,6 +112,7 @@ const mealFields = {
 };
 
 const diaperFields = {
+	clientMutationId: clientMutationIdSchema,
 	time: isoDateTimeSchema,
 	type: diaperTypeSchema,
 	color: diaperColorSchema.optional(),
@@ -117,6 +120,7 @@ const diaperFields = {
 };
 
 const sleepFields = {
+	clientMutationId: clientMutationIdSchema,
 	type: sleepTypeSchema,
 	startTime: isoDateTimeSchema,
 	endTime: isoDateTimeSchema.optional(),

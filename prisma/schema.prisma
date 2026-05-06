@@ -125,6 +125,7 @@ model RoutineMealEvent {
   amountBowl      Decimal?        @map("amount_bowl") @db.Decimal(4, 2)
   amountGrams     Int?            @map("amount_grams")
   notes           String?
+  clientMutationId String?         @unique @map("client_mutation_id")
   createdById     String          @map("created_by") @db.Uuid
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -144,6 +145,7 @@ model RoutineDiaperEvent {
   diaperType  RoutineDiaperType   @map("diaper_type")
   color       RoutineDiaperColor?
   notes       String?
+  clientMutationId String?         @unique @map("client_mutation_id")
   createdById String              @map("created_by") @db.Uuid
   createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -163,6 +165,7 @@ model SleepSession {
   startTime   DateTime  @map("start_time") @db.Timestamptz(6)
   endTime     DateTime? @map("end_time") @db.Timestamptz(6)
   notes       String?
+  clientMutationId String? @unique @map("client_mutation_id")
   createdById String    @map("created_by") @db.Uuid
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
