@@ -387,7 +387,7 @@ function normalizeMealInput(input) {
 	if (input.type === "breastfeed") {
 		base.durationMinutes = input.durationMinutes;
 	} else if (input.type === "solid") {
-		base.amountBowl = input.amountBowl;
+		base.amountBowl = input.amountBowl ?? null;
 		base.amountGrams = input.amountGrams ?? null;
 	} else {
 		base.amountMl = input.amountMl;
