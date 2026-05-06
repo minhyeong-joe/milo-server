@@ -81,6 +81,39 @@ export async function createBabyForUser(userId, input) {
 	};
 }
 
+export async function updateBabyForUser(userId, babyId, input) {
+	const access = await prisma.babyUser.findFirst({
+		where: {
+			userId,
+			babyId,
+			deletedAt: null,
+			user: {
+				deletedAt: null,
+			},
+			baby: {
+				deletedAt: null,
+			},
+		},
+	});
+
+	if (!access) {
+		return null;
+	}
+
+	const baby = await prisma.baby.update({
+		where: { id: babyId },
+		data: {
+			name: input.name,
+			birthdate: new Date(`${input.birthdate}T00:00:00.000Z`),
+			sex: input.sex,
+		},
+	});
+
+	return {
+		baby: serializeBaby(baby),
+	};
+}
+
 export async function deleteBabyForUser(userId, babyId) {
 	const access = await prisma.babyUser.findFirst({
 		where: {

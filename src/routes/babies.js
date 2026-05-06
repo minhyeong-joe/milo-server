@@ -7,6 +7,7 @@ import {
 	createBabyForUser,
 	deleteBabyForUser,
 	listBabiesForUser,
+	updateBabyForUser,
 } from "../services/babies.js";
 
 const router = Router();
@@ -31,6 +32,12 @@ const createBabySchema = z.object({
 	timezone: z.string().trim().min(1).default("America/Los_Angeles"),
 	avatarObjectKey: z.string().trim().min(1).nullable().optional(),
 	role: z.enum(["FATHER", "MOTHER", "CAREGIVER"]).default("MOTHER"),
+});
+
+const updateBabySchema = z.object({
+	name: z.string().trim().min(1).max(80),
+	birthdate: z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date."),
+	sex: z.enum(["GIRL", "BOY"]),
 });
 
 const babyIdParamsSchema = z.object({
@@ -66,6 +73,53 @@ router.post("/", async (req, res, next) => {
 		const result = await createBabyForUser(req.user.id, parsed.data);
 
 		return res.status(201).json(result);
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.patch("/:babyId", async (req, res, next) => {
+	try {
+		const parsedParams = parseParams(babyIdParamsSchema, req.params);
+
+		if (parsedParams.error) {
+			return sendError(
+				res,
+				400,
+				parsedParams.error.code,
+				parsedParams.error.message,
+				parsedParams.error.details,
+			);
+		}
+
+		const parsedBody = parseBody(updateBabySchema, req.body);
+
+		if (parsedBody.error) {
+			return sendError(
+				res,
+				400,
+				parsedBody.error.code,
+				parsedBody.error.message,
+				parsedBody.error.details,
+			);
+		}
+
+		const result = await updateBabyForUser(
+			req.user.id,
+			parsedParams.data.babyId,
+			parsedBody.data,
+		);
+
+		if (!result) {
+			return sendError(
+				res,
+				404,
+				"BABY_NOT_FOUND",
+				"Baby was not found for the current user.",
+			);
+		}
+
+		return res.json(result);
 	} catch (error) {
 		return next(error);
 	}

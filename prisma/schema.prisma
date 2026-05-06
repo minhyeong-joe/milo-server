@@ -213,12 +213,14 @@ model BabyGrowth {
   weightGrams         Int? @map("weight_grams")
   headCircumferenceMm Int? @map("head_circumference_mm")
   notes               String?
+  measuredDate        DateTime @map("measured_date") @db.Date
   measuredAt          DateTime @map("measured_at") @db.Timestamptz(6)
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   baby Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
   
+  @@unique([babyId, measuredDate])
   @@index([babyId, measuredAt])
   @@map("baby_growth")
 }

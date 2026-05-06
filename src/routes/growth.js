@@ -12,11 +12,20 @@ import {
 
 const router = Router({ mergeParams: true });
 
-function isValidIsoDateTime(value) {
-	return !Number.isNaN(new Date(value).getTime());
+function isValidDateString(value) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+		return false;
+	}
+
+	const date = new Date(`${value}T00:00:00.000Z`);
+
+	return (
+		!Number.isNaN(date.getTime()) &&
+		date.toISOString().slice(0, 10) === value
+	);
 }
 
-const isoDateTimeSchema = z.string().refine(isValidIsoDateTime, "Must be a valid ISO timestamp.");
+const dateStringSchema = z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date.");
 const measurementSchema = z.number().int().positive().optional();
 const notesSchema = z.string().trim().max(200).optional();
 
@@ -30,7 +39,7 @@ const growthParamsSchema = babyParamsSchema.extend({
 
 const growthRecordBodySchema = z
 	.object({
-		measuredAt: isoDateTimeSchema,
+		measuredDate: dateStringSchema,
 		heightMm: measurementSchema,
 		weightGrams: measurementSchema,
 		headCircumferenceMm: measurementSchema,
@@ -67,6 +76,15 @@ function sendGrowthServiceError(res, code) {
 			404,
 			"BABY_NOT_FOUND",
 			"Baby was not found for the current user.",
+		);
+	}
+
+	if (code === "GROWTH_RECORD_DATE_EXISTS") {
+		return sendError(
+			res,
+			409,
+			"GROWTH_RECORD_DATE_EXISTS",
+			"A growth record already exists for this date.",
 		);
 	}
 
