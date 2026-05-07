@@ -6,7 +6,6 @@ function serializeGrowthRecord(record) {
 		id: record.id,
 		babyId: record.babyId,
 		measuredDate: record.measuredDate.toISOString().slice(0, 10),
-		measuredAt: record.measuredAt.toISOString(),
 		heightMm: record.heightMm,
 		weightGrams: record.weightGrams,
 		headCircumferenceMm: record.headCircumferenceMm,
@@ -20,38 +19,6 @@ function dateOnly(value) {
 	return new Date(`${value}T00:00:00.000Z`);
 }
 
-function getTimezoneOffsetMs(timezone, value) {
-	const parts = new Intl.DateTimeFormat("en-US", {
-		timeZone: timezone,
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		hourCycle: "h23",
-	}).formatToParts(value);
-	const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-	const localAsUtc = Date.UTC(
-		Number(byType.year),
-		Number(byType.month) - 1,
-		Number(byType.day),
-		Number(byType.hour),
-		Number(byType.minute),
-		Number(byType.second),
-	);
-
-	return localAsUtc - value.getTime();
-}
-
-function babyLocalDateStart(measuredDate, timezone) {
-	const [year, month, day] = measuredDate.split("-").map(Number);
-	const utcGuess = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-	const offsetMs = getTimezoneOffsetMs(timezone, utcGuess);
-
-	return new Date(utcGuess.getTime() - offsetMs);
-}
-
 function normalizeNotes(notes) {
 	if (notes === undefined) {
 		return undefined;
@@ -61,10 +28,9 @@ function normalizeNotes(notes) {
 	return trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeGrowthInput(input, baby) {
+function normalizeGrowthInput(input) {
 	return {
 		measuredDate: dateOnly(input.measuredDate),
-		measuredAt: babyLocalDateStart(input.measuredDate, baby.timezone),
 		heightMm: input.heightMm ?? null,
 		weightGrams: input.weightGrams ?? null,
 		headCircumferenceMm: input.headCircumferenceMm ?? null,
@@ -114,7 +80,7 @@ export async function createGrowthRecordForUser(userId, babyId, input) {
 
 	const record = await prisma.babyGrowth.create({
 		data: {
-			...normalizeGrowthInput(input, baby),
+			...normalizeGrowthInput(input),
 			babyId,
 		},
 	});
@@ -150,7 +116,7 @@ export async function updateGrowthRecordForUser(userId, babyId, growthId, input)
 
 	const record = await prisma.babyGrowth.update({
 		where: { id: growthId },
-		data: normalizeGrowthInput(input, baby),
+		data: normalizeGrowthInput(input),
 	});
 
 	return {
