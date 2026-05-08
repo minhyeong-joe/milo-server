@@ -7,6 +7,7 @@ import {
 	createRoutineLogForUser,
 	deleteRoutineLogForUser,
 	getRoutineDaysForUser,
+	getRoutineStatsForUser,
 	updateRoutineLogForUser,
 } from "../services/routine.js";
 
@@ -106,6 +107,21 @@ const routineDaysQuerySchema = z
 			.enum(["true", "false"])
 			.optional()
 			.transform((value) => value === "true"),
+	});
+
+const routineStatsQuerySchema = z
+	.object({
+		startDate: dateStringSchema,
+		endDate: dateStringSchema,
+	})
+	.superRefine((value, ctx) => {
+		if (value.endDate < value.startDate) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["endDate"],
+				message: "endDate must be on or after startDate.",
+			});
+		}
 	});
 
 const mealFields = {
@@ -217,6 +233,37 @@ router.get("/days", async (req, res, next) => {
 			parsedQuery.data.startDate,
 			parsedQuery.data.count,
 			parsedQuery.data.includeLastLogged,
+		);
+
+		if (!result) {
+			return sendRoutineServiceError(res, "BABY_NOT_FOUND");
+		}
+
+		return res.json(result);
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.get("/stats", async (req, res, next) => {
+	try {
+		const parsedParams = parseParams(babyParamsSchema, req.params);
+
+		if (parsedParams.error) {
+			return sendParsedError(res, parsedParams);
+		}
+
+		const parsedQuery = parseQuery(routineStatsQuerySchema, req.query);
+
+		if (parsedQuery.error) {
+			return sendParsedError(res, parsedQuery);
+		}
+
+		const result = await getRoutineStatsForUser(
+			req.user.id,
+			parsedParams.data.babyId,
+			parsedQuery.data.startDate,
+			parsedQuery.data.endDate,
 		);
 
 		if (!result) {

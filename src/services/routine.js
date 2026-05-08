@@ -48,6 +48,18 @@ function sortDateStringsDescending(a, b) {
 	return b.localeCompare(a);
 }
 
+function dateRange(startDate, endDate) {
+	const dates = [];
+	let current = startDate;
+
+	while (current <= endDate) {
+		dates.push(current);
+		current = addDays(current, 1);
+	}
+
+	return dates;
+}
+
 function queryBounds(startDate, endDate) {
 	return {
 		start: dateOnly(addDays(startDate, -2)),
@@ -110,6 +122,38 @@ function serializeSleep(row) {
 		startTime: row.startTime.toISOString(),
 		endTime: row.endTime ? row.endTime.toISOString() : null,
 		notes: row.notes,
+	};
+}
+
+function serializeMealPatternLog(row) {
+	return {
+		id: row.id,
+		kind: "meal",
+		time: row.loggedAt.toISOString(),
+		type: row.mealType,
+		amountMl: row.amountMl,
+		durationMinutes: row.durationMinutes,
+		amountBowl: row.amountBowl === null ? null : Number(row.amountBowl),
+		amountGrams: row.amountGrams,
+	};
+}
+
+function serializeDiaperPatternLog(row) {
+	return {
+		id: row.id,
+		kind: "diaper",
+		time: row.loggedAt.toISOString(),
+		type: row.diaperType,
+	};
+}
+
+function serializeSleepPatternLog(row) {
+	return {
+		id: row.id,
+		kind: "sleep",
+		type: row.sleepType,
+		startTime: row.startTime.toISOString(),
+		endTime: row.endTime ? row.endTime.toISOString() : null,
 	};
 }
 
@@ -454,6 +498,292 @@ export async function getRoutineDaysForUser(
 		...result,
 		lastLogged: await getLastLoggedForBaby(prisma, baby.id),
 	};
+}
+
+export async function getRoutineStatsForUser(userId, babyId, startDate, endDate) {
+	const baby = await findAccessibleBaby(userId, babyId);
+
+	if (!baby) {
+		return null;
+	}
+
+	return getRoutineStatsForBaby(prisma, baby, startDate, endDate);
+}
+
+async function getRoutineStatsForBaby(client, baby, startDate, endDate) {
+	const dates = dateRange(startDate, endDate);
+	const rows = await loadRowsForDates(client, baby.id, startDate, endDate);
+	const logsByDate = new Map(dates.map((date) => [date, []]));
+
+	for (const meal of rows.meals) {
+		const date = localDateForInstant(meal.loggedAt, baby.timezone);
+		if (logsByDate.has(date)) {
+			logsByDate.get(date).push({
+				sortTime: meal.loggedAt,
+				value: serializeMealPatternLog(meal),
+			});
+		}
+	}
+
+	for (const diaper of rows.diapers) {
+		const date = localDateForInstant(diaper.loggedAt, baby.timezone);
+		if (logsByDate.has(date)) {
+			logsByDate.get(date).push({
+				sortTime: diaper.loggedAt,
+				value: serializeDiaperPatternLog(diaper),
+			});
+		}
+	}
+
+	for (const sleep of rows.sleeps) {
+		const date = getSleepRoutineDate(sleep, baby.timezone);
+		if (logsByDate.has(date)) {
+			logsByDate.get(date).push({
+				sortTime: sleep.endTime ?? sleep.startTime,
+				value: serializeSleepPatternLog(sleep),
+			});
+		}
+	}
+
+	return {
+		startDate,
+		endDate,
+		dayCount: dates.length,
+		days: dates.map((date) => ({
+			date,
+			logs: logsByDate
+				.get(date)
+				.sort((left, right) => left.sortTime.getTime() - right.sortTime.getTime())
+				.map((event) => event.value),
+		})),
+		summary: getRoutineStatsSummary(rows, baby.timezone, startDate, endDate, dates.length),
+	};
+}
+
+function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
+	const totals = {
+		meal: {
+			total: { count: 0 },
+			breastfeed: { count: 0, durationMinutes: 0 },
+			breastMilk: { count: 0, amountMl: 0 },
+			formula: { count: 0, amountMl: 0 },
+			solid: { count: 0, amountBowl: 0, amountBowlCount: 0, amountGrams: 0, amountGramsCount: 0 },
+		},
+		diaper: {
+			total: { count: 0 },
+			wet: { count: 0 },
+			dirty: { count: 0 },
+			dry: { count: 0 },
+			both: { count: 0 },
+		},
+		sleep: {
+			total: { count: 0, durationMinutes: 0 },
+			nap: { count: 0, durationMinutes: 0 },
+			nighttime: { count: 0, durationMinutes: 0 },
+		},
+	};
+	const mealDays = {
+		total: new Set(),
+		breastfeed: new Set(),
+		breastMilk: new Set(),
+		formula: new Set(),
+		solid: new Set(),
+	};
+	const diaperDays = new Set();
+	const sleepDays = new Set();
+
+	for (const meal of rows.meals) {
+		const date = localDateForInstant(meal.loggedAt, timezone);
+		if (date < startDate || date > endDate) {
+			continue;
+		}
+
+		totals.meal.total.count += 1;
+		mealDays.total.add(date);
+		mealDays[meal.mealType].add(date);
+		const mealType = totals.meal[meal.mealType];
+		mealType.count += 1;
+
+		if (meal.mealType === "breastfeed") {
+			mealType.durationMinutes += meal.durationMinutes ?? 0;
+		} else if (meal.mealType === "solid") {
+			if (meal.amountBowl !== null) {
+				mealType.amountBowl += Number(meal.amountBowl);
+				mealType.amountBowlCount += 1;
+			}
+			if (meal.amountGrams !== null) {
+				mealType.amountGrams += meal.amountGrams;
+				mealType.amountGramsCount += 1;
+			}
+		} else {
+			mealType.amountMl += meal.amountMl ?? 0;
+		}
+	}
+
+	for (const diaper of rows.diapers) {
+		const date = localDateForInstant(diaper.loggedAt, timezone);
+		if (date < startDate || date > endDate) {
+			continue;
+		}
+
+		totals.diaper.total.count += 1;
+		diaperDays.add(date);
+		totals.diaper[diaper.diaperType].count += 1;
+	}
+
+	for (const sleep of rows.sleeps) {
+		const date = getSleepRoutineDate(sleep, timezone);
+		if (date < startDate || date > endDate) {
+			continue;
+		}
+
+		totals.sleep.total.count += 1;
+		sleepDays.add(date);
+		totals.sleep[sleep.sleepType].count += 1;
+
+		if (sleep.endTime) {
+			const minutes = Math.max(
+				0,
+				Math.round((sleep.endTime.getTime() - sleep.startTime.getTime()) / 60000),
+			);
+			totals.sleep.total.durationMinutes += minutes;
+			totals.sleep[sleep.sleepType].durationMinutes += minutes;
+		}
+	}
+
+	return {
+		meal: {
+			activeDays: mealDays.total.size,
+			avgSessionsPerActiveDay: averagePerValue(
+				totals.meal.total.count,
+				mealDays.total.size,
+			),
+			byType: {
+				breastfeed: {
+					activeDays: mealDays.breastfeed.size,
+					avgSessionsPerActiveDay: averagePerValue(
+						totals.meal.breastfeed.count,
+						mealDays.breastfeed.size,
+					),
+					avgDurationMinutesPerSession: averagePerValue(
+						totals.meal.breastfeed.durationMinutes,
+						totals.meal.breastfeed.count,
+					),
+				},
+				breastMilk: {
+					activeDays: mealDays.breastMilk.size,
+					avgSessionsPerActiveDay: averagePerValue(
+						totals.meal.breastMilk.count,
+						mealDays.breastMilk.size,
+					),
+					avgAmountMlPerSession: averagePerValue(
+						totals.meal.breastMilk.amountMl,
+						totals.meal.breastMilk.count,
+					),
+				},
+				formula: {
+					activeDays: mealDays.formula.size,
+					avgSessionsPerActiveDay: averagePerValue(
+						totals.meal.formula.count,
+						mealDays.formula.size,
+					),
+					avgAmountMlPerSession: averagePerValue(
+						totals.meal.formula.amountMl,
+						totals.meal.formula.count,
+					),
+				},
+				solid: {
+					activeDays: mealDays.solid.size,
+					avgSessionsPerActiveDay: averagePerValue(
+						totals.meal.solid.count,
+						mealDays.solid.size,
+					),
+					avgBowlsPerSession: averagePerValue(
+						totals.meal.solid.amountBowl,
+						totals.meal.solid.amountBowlCount,
+					),
+					avgGramsPerSession: averagePerValue(
+						totals.meal.solid.amountGrams,
+						totals.meal.solid.amountGramsCount,
+					),
+				},
+			},
+		},
+		diaper: {
+			activeDays: diaperDays.size,
+			avgChangesPerActiveDay: averagePerValue(
+				totals.diaper.total.count,
+				diaperDays.size,
+			),
+			byType: {
+				both: {
+					avgChangesPerActiveDay: averagePerValue(
+						totals.diaper.both.count,
+						diaperDays.size,
+					),
+				},
+				dirty: {
+					avgChangesPerActiveDay: averagePerValue(
+						totals.diaper.dirty.count,
+						diaperDays.size,
+					),
+				},
+				dry: {
+					avgChangesPerActiveDay: averagePerValue(
+						totals.diaper.dry.count,
+						diaperDays.size,
+					),
+				},
+				wet: {
+					avgChangesPerActiveDay: averagePerValue(
+						totals.diaper.wet.count,
+						diaperDays.size,
+					),
+				},
+			},
+		},
+		sleep: {
+			activeDays: sleepDays.size,
+			avgSessionsPerActiveDay: averagePerValue(
+				totals.sleep.total.count,
+				sleepDays.size,
+			),
+			avgDurationMinutesPerActiveDay: averagePerValue(
+				totals.sleep.total.durationMinutes,
+				sleepDays.size,
+			),
+			byType: {
+				nap: {
+					avgSessionsPerActiveDay: averagePerValue(
+						totals.sleep.nap.count,
+						sleepDays.size,
+					),
+					avgDurationMinutesPerActiveDay: averagePerValue(
+						totals.sleep.nap.durationMinutes,
+						sleepDays.size,
+					),
+				},
+				nighttime: {
+					avgSessionsPerActiveDay: averagePerValue(
+						totals.sleep.nighttime.count,
+						sleepDays.size,
+					),
+					avgDurationMinutesPerActiveDay: averagePerValue(
+						totals.sleep.nighttime.durationMinutes,
+						sleepDays.size,
+					),
+				},
+			},
+		},
+	};
+}
+
+function averagePerDay(total, dayCount) {
+	return dayCount > 0 ? total / dayCount : 0;
+}
+
+function averagePerValue(total, count) {
+	return count > 0 ? total / count : 0;
 }
 
 async function getLastLoggedForBaby(client, babyId) {
