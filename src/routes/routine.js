@@ -38,7 +38,7 @@ const diaperTypeSchema = z.enum(["wet", "dirty", "both", "dry"]);
 const diaperColorSchema = z.enum(["green", "brown", "yellow", "black"]);
 const sleepTypeSchema = z.enum(["nap", "nighttime"]);
 const kindSchema = z.enum(["meal", "diaper", "sleep"]);
-const amountBowlSchema = z.union([
+const amountServingsSchema = z.union([
 	z.literal(0.25),
 	z.literal(0.5),
 	z.literal(0.75),
@@ -63,19 +63,19 @@ function refineMealPayload(value, ctx) {
 		});
 	}
 
-	if (value.type === "solid" && value.amountBowl === undefined && value.amountGrams === undefined) {
+	if (value.type === "solid" && value.amountServings === undefined && value.amountGrams === undefined) {
 		ctx.addIssue({
 			code: "custom",
-			path: ["amountBowl"],
-			message: "amountBowl or amountGrams is required for solid meals.",
+			path: ["amountServings"],
+			message: "amountServings or amountGrams is required for solid meals.",
 		});
 	}
 
-	if (value.type === "solid" && value.amountBowl !== undefined && value.amountGrams !== undefined) {
+	if (value.type === "solid" && value.amountServings !== undefined && value.amountGrams !== undefined) {
 		ctx.addIssue({
 			code: "custom",
 			path: ["amountGrams"],
-			message: "Use either amountBowl or amountGrams for solid meals, not both.",
+			message: "Use either amountServings or amountGrams for solid meals, not both.",
 		});
 	}
 }
@@ -130,7 +130,7 @@ const mealFields = {
 	type: mealTypeSchema,
 	amountMl: z.number().int().positive().optional(),
 	durationMinutes: z.number().int().positive().optional(),
-	amountBowl: amountBowlSchema.optional(),
+	amountServings: amountServingsSchema.optional(),
 	amountGrams: z.number().int().positive().optional(),
 	breastSide: z.enum(["left", "right"]).optional(),
 	notes: notesSchema,

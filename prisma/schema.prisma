@@ -130,7 +130,7 @@ model RoutineMealEvent {
   mealType        RoutineMealType @map("meal_type")
   amountMl        Int?            @map("amount_ml")
   durationMinutes Int?            @map("duration_minutes")
-  amountBowl      Decimal?        @map("amount_bowl") @db.Decimal(4, 2)
+  amountServings   Decimal?        @map("amount_servings") @db.Decimal(4, 2)
   amountGrams     Int?            @map("amount_grams")
   breastSide      BreastSide?     @map("breast_side")  
   notes           String?

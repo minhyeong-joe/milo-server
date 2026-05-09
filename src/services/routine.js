@@ -8,7 +8,7 @@ const EMPTY_SUMMARY = {
 			breastfeed: { count: 0, totalMinutes: 0 },
 			breastMilk: { count: 0, totalAmountMl: 0 },
 			formula: { count: 0, totalAmountMl: 0 },
-			solid: { count: 0, totalBowls: 0, totalGrams: 0 },
+			solid: { count: 0, totalServings: 0, totalGrams: 0 },
 		},
 	},
 	diapers: {
@@ -96,7 +96,7 @@ function serializeMeal(row) {
 		type: row.mealType,
 		amountMl: row.amountMl,
 		durationMinutes: row.durationMinutes,
-		amountBowl: row.amountBowl === null ? null : Number(row.amountBowl),
+		amountServings: row.amountServings === null ? null : Number(row.amountServings),
 		amountGrams: row.amountGrams,
 		breastSide: row.breastSide === null? null : row.breastSide,
 		notes: row.notes,
@@ -133,7 +133,7 @@ function serializeMealPatternLog(row) {
 		type: row.mealType,
 		amountMl: row.amountMl,
 		durationMinutes: row.durationMinutes,
-		amountBowl: row.amountBowl === null ? null : Number(row.amountBowl),
+		amountServings: row.amountServings === null ? null : Number(row.amountServings),
 		amountGrams: row.amountGrams,
 	};
 }
@@ -188,7 +188,7 @@ function getSummaryForRows({ meals, diapers, sleeps }, timezone, targetDate) {
 		if (meal.mealType === "breastfeed") {
 			typeSummary.totalMinutes += meal.durationMinutes ?? 0;
 		} else if (meal.mealType === "solid") {
-			typeSummary.totalBowls += meal.amountBowl === null ? 0 : Number(meal.amountBowl);
+			typeSummary.totalServings += meal.amountServings === null ? 0 : Number(meal.amountServings);
 			typeSummary.totalGrams += meal.amountGrams ?? 0;
 		} else {
 			typeSummary.totalAmountMl += meal.amountMl ?? 0;
@@ -424,7 +424,7 @@ function normalizeMealInput(input) {
 		mealType: input.type,
 		amountMl: null,
 		durationMinutes: null,
-		amountBowl: null,
+		amountServings: null,
 		amountGrams: null,
 		breastSide: null,
 		notes: normalizeNotes(input.notes),
@@ -434,7 +434,7 @@ function normalizeMealInput(input) {
 		base.durationMinutes = input.durationMinutes;
 		base.breastSide = input.breastSide ?? null;
 	} else if (input.type === "solid") {
-		base.amountBowl = input.amountBowl ?? null;
+		base.amountServings = input.amountServings ?? null;
 		base.amountGrams = input.amountGrams ?? null;
 	} else {
 		base.amountMl = input.amountMl;
@@ -567,7 +567,7 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 			breastfeed: { count: 0, durationMinutes: 0 },
 			breastMilk: { count: 0, amountMl: 0 },
 			formula: { count: 0, amountMl: 0 },
-			solid: { count: 0, amountBowl: 0, amountBowlCount: 0, amountGrams: 0, amountGramsCount: 0 },
+			solid: { count: 0, amountServings: 0, amountServingsCount: 0, amountGrams: 0, amountGramsCount: 0 },
 		},
 		diaper: {
 			total: { count: 0 },
@@ -607,9 +607,9 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 		if (meal.mealType === "breastfeed") {
 			mealType.durationMinutes += meal.durationMinutes ?? 0;
 		} else if (meal.mealType === "solid") {
-			if (meal.amountBowl !== null) {
-				mealType.amountBowl += Number(meal.amountBowl);
-				mealType.amountBowlCount += 1;
+			if (meal.amountServings !== null) {
+				mealType.amountServings += Number(meal.amountServings);
+				mealType.amountServingsCount += 1;
 			}
 			if (meal.amountGrams !== null) {
 				mealType.amountGrams += meal.amountGrams;
@@ -718,25 +718,25 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 					activeDays: mealDays.solid.size,
 					totalSessions: totals.meal.solid.count,
 
-					totalBowls: totals.meal.solid.amountBowl,
+					totalServings: totals.meal.solid.amountServings,
 					totalGrams: totals.meal.solid.amountGrams,
-					bowlEntryCount: totals.meal.solid.amountBowlCount,
+					servingEntryCount: totals.meal.solid.amountServingsCount,
 					gramEntryCount: totals.meal.solid.amountGramsCount,
 
 					avgSessionsPerActiveDay: averagePerValue(
 						totals.meal.solid.count,
 						mealDays.solid.size,
 					),
-					avgBowlsPerSession: averagePerValue(
-						totals.meal.solid.amountBowl,
-						totals.meal.solid.amountBowlCount,
+					avgServingsPerSession: averagePerValue(
+						totals.meal.solid.amountServings,
+						totals.meal.solid.amountServingsCount,
 					),
 					avgGramsPerSession: averagePerValue(
 						totals.meal.solid.amountGrams,
 						totals.meal.solid.amountGramsCount,
 					),
-					avgBowlsPerActiveDay: averagePerValue(
-						totals.meal.solid.amountBowl,
+					avgServingsPerActiveDay: averagePerValue(
+						totals.meal.solid.amountServings,
 						mealDays.solid.size,
 					),
 					avgGramsPerActiveDay: averagePerValue(
