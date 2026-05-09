@@ -654,6 +654,7 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 	return {
 		meal: {
 			activeDays: mealDays.total.size,
+			totalSessions: totals.meal.total.count,
 			avgSessionsPerActiveDay: averagePerValue(
 				totals.meal.total.count,
 				mealDays.total.size,
@@ -661,6 +662,8 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 			byType: {
 				breastfeed: {
 					activeDays: mealDays.breastfeed.size,
+					totalSessions: totals.meal.breastfeed.count,
+					totalDurationMinutes: totals.meal.breastfeed.durationMinutes,
 					avgSessionsPerActiveDay: averagePerValue(
 						totals.meal.breastfeed.count,
 						mealDays.breastfeed.size,
@@ -669,9 +672,16 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 						totals.meal.breastfeed.durationMinutes,
 						totals.meal.breastfeed.count,
 					),
+					avgDurationMinutesPerActiveDay: averagePerValue(
+						totals.meal.breastfeed.durationMinutes,
+						mealDays.breastfeed.size,
+					),
 				},
+
 				breastMilk: {
 					activeDays: mealDays.breastMilk.size,
+					totalSessions: totals.meal.breastMilk.count,
+					totalAmountMl: totals.meal.breastMilk.amountMl,
 					avgSessionsPerActiveDay: averagePerValue(
 						totals.meal.breastMilk.count,
 						mealDays.breastMilk.size,
@@ -680,9 +690,16 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 						totals.meal.breastMilk.amountMl,
 						totals.meal.breastMilk.count,
 					),
+					avgAmountMlPerActiveDay: averagePerValue(
+						totals.meal.breastMilk.amountMl,
+						mealDays.breastMilk.size,
+					),
 				},
+
 				formula: {
 					activeDays: mealDays.formula.size,
+					totalSessions: totals.meal.formula.count,
+					totalAmountMl: totals.meal.formula.amountMl,
 					avgSessionsPerActiveDay: averagePerValue(
 						totals.meal.formula.count,
 						mealDays.formula.size,
@@ -691,9 +708,21 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 						totals.meal.formula.amountMl,
 						totals.meal.formula.count,
 					),
+					avgAmountMlPerActiveDay: averagePerValue(
+						totals.meal.formula.amountMl,
+						mealDays.formula.size,
+					),
 				},
+
 				solid: {
 					activeDays: mealDays.solid.size,
+					totalSessions: totals.meal.solid.count,
+
+					totalBowls: totals.meal.solid.amountBowl,
+					totalGrams: totals.meal.solid.amountGrams,
+					bowlEntryCount: totals.meal.solid.amountBowlCount,
+					gramEntryCount: totals.meal.solid.amountGramsCount,
+
 					avgSessionsPerActiveDay: averagePerValue(
 						totals.meal.solid.count,
 						mealDays.solid.size,
@@ -706,35 +735,49 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 						totals.meal.solid.amountGrams,
 						totals.meal.solid.amountGramsCount,
 					),
+					avgBowlsPerActiveDay: averagePerValue(
+						totals.meal.solid.amountBowl,
+						mealDays.solid.size,
+					),
+					avgGramsPerActiveDay: averagePerValue(
+						totals.meal.solid.amountGrams,
+						mealDays.solid.size,
+					),
 				},
 			},
 		},
+
 		diaper: {
 			activeDays: diaperDays.size,
+			totalChanges: totals.diaper.total.count,
 			avgChangesPerActiveDay: averagePerValue(
 				totals.diaper.total.count,
 				diaperDays.size,
 			),
 			byType: {
 				both: {
+					totalChanges: totals.diaper.both.count,
 					avgChangesPerActiveDay: averagePerValue(
 						totals.diaper.both.count,
 						diaperDays.size,
 					),
 				},
 				dirty: {
+					totalChanges: totals.diaper.dirty.count,
 					avgChangesPerActiveDay: averagePerValue(
 						totals.diaper.dirty.count,
 						diaperDays.size,
 					),
 				},
 				dry: {
+					totalChanges: totals.diaper.dry.count,
 					avgChangesPerActiveDay: averagePerValue(
 						totals.diaper.dry.count,
 						diaperDays.size,
 					),
 				},
 				wet: {
+					totalChanges: totals.diaper.wet.count,
 					avgChangesPerActiveDay: averagePerValue(
 						totals.diaper.wet.count,
 						diaperDays.size,
@@ -742,11 +785,18 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 				},
 			},
 		},
+
 		sleep: {
 			activeDays: sleepDays.size,
+			totalSessions: totals.sleep.total.count,
+			totalDurationMinutes: totals.sleep.total.durationMinutes,
 			avgSessionsPerActiveDay: averagePerValue(
 				totals.sleep.total.count,
 				sleepDays.size,
+			),
+			avgDurationMinutesPerSession: averagePerValue(
+				totals.sleep.total.durationMinutes,
+				totals.sleep.total.count,
 			),
 			avgDurationMinutesPerActiveDay: averagePerValue(
 				totals.sleep.total.durationMinutes,
@@ -754,9 +804,15 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 			),
 			byType: {
 				nap: {
+					totalSessions: totals.sleep.nap.count,
+					totalDurationMinutes: totals.sleep.nap.durationMinutes,
 					avgSessionsPerActiveDay: averagePerValue(
 						totals.sleep.nap.count,
 						sleepDays.size,
+					),
+					avgDurationMinutesPerSession: averagePerValue(
+						totals.sleep.nap.durationMinutes,
+						totals.sleep.nap.count,
 					),
 					avgDurationMinutesPerActiveDay: averagePerValue(
 						totals.sleep.nap.durationMinutes,
@@ -764,9 +820,15 @@ function getRoutineStatsSummary(rows, timezone, startDate, endDate, dayCount) {
 					),
 				},
 				nighttime: {
+					totalSessions: totals.sleep.nighttime.count,
+					totalDurationMinutes: totals.sleep.nighttime.durationMinutes,
 					avgSessionsPerActiveDay: averagePerValue(
 						totals.sleep.nighttime.count,
 						sleepDays.size,
+					),
+					avgDurationMinutesPerSession: averagePerValue(
+						totals.sleep.nighttime.durationMinutes,
+						totals.sleep.nighttime.count,
 					),
 					avgDurationMinutesPerActiveDay: averagePerValue(
 						totals.sleep.nighttime.durationMinutes,
