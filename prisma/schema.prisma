@@ -77,6 +77,8 @@ model User {
   createdMealEvents RoutineMealEvent[] @relation("RoutineMealCreatedBy")
   createdDiaperEvents RoutineDiaperEvent[] @relation("RoutineDiaperCreatedBy")
   createdSleepSessions SleepSession[] @relation("SleepSessionCreatedBy")
+  createdDiaryEntries DiaryEntry[] @relation("DiaryEntryCreatedBy")
+  updatedDiaryEntries DiaryEntry[] @relation("DiaryEntryUpdatedBy")
 
   @@unique([authProvider, authProviderUserId])
   @@map("users")
@@ -101,6 +103,8 @@ model Baby {
   sleepSessions SleepSession[]
   routineSummaries DailyRoutineSummary[]
   growthRecords BabyGrowth[]
+  diaryEntries DiaryEntry[]
+  diaryTags Tag[]
 
   @@index([createdById])
   @@map("babies")
@@ -221,4 +225,70 @@ model BabyGrowth {
   
   @@unique([babyId, measuredDate])
   @@map("baby_growth")
+}
+
+model DiaryEntry {
+  id           String   @id @default(uuid()) @db.Uuid
+  babyId       String   @map("baby_id") @db.Uuid
+  content      String   @db.VarChar(500)
+  diaryDate    DateTime @map("diary_date") @db.Date
+  createdById  String   @map("created_by") @db.Uuid
+  updatedById  String   @map("updated_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby      Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+  createdBy User @relation("DiaryEntryCreatedBy", fields: [createdById], references: [id])
+  updatedBy User @relation("DiaryEntryUpdatedBy", fields: [updatedById], references: [id])
+  media     DiaryMedia[]
+  tags      DiaryTag[]
+
+  @@index([babyId, diaryDate, createdAt])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("diary_entries")
+}
+
+model DiaryMedia {
+  id          String  @id @default(uuid()) @db.Uuid
+  diaryId     String  @map("diary_id") @db.Uuid
+  fileType    String  @map("file_type")
+  description String?
+  objectKey   String  @unique @map("object_key")
+  sizeBytes   Int     @map("size_bytes")
+
+  diary DiaryEntry @relation(fields: [diaryId], references: [id], onDelete: Cascade)
+
+  @@index([diaryId])
+  @@map("diary_media")
+}
+
+model Tag {
+  id        String   @id @default(uuid()) @db.Uuid
+  babyId    String   @map("baby_id") @db.Uuid
+  type      String
+  name      String
+  color     String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baby         Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+  diaryEntries DiaryTag[]
+
+  @@unique([babyId, type, name])
+  @@index([babyId])
+  @@map("tags")
+}
+
+model DiaryTag {
+  id      String @id @default(uuid()) @db.Uuid
+  diaryId String @map("diary_id") @db.Uuid
+  tagId   String @map("tag_id") @db.Uuid
+
+  diary DiaryEntry @relation(fields: [diaryId], references: [id], onDelete: Cascade)
+  tag   Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([diaryId, tagId])
+  @@index([tagId])
+  @@map("diary_tags")
 }
