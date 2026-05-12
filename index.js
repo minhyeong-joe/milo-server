@@ -13,12 +13,14 @@ const [
 	{ default: babiesRouter },
 	{ default: growthRouter },
 	{ default: routineRouter },
+	{ default: tagsRouter },
 	{ default: prisma },
 ] = await Promise.all([
 	import("./src/routes/auth.js"),
 	import("./src/routes/babies.js"),
 	import("./src/routes/growth.js"),
 	import("./src/routes/routine.js"),
+	import("./src/routes/tags.js"),
 	import("./src/db/prisma.js"),
 ]);
 
@@ -69,6 +71,7 @@ app.get("/health", async (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/babies/:babyId/growth", growthRouter);
 app.use("/api/babies/:babyId/routine", routineRouter);
+app.use("/api/babies/:babyId/tags", tagsRouter);
 app.use("/api/babies", babiesRouter);
 
 app.use(notFoundHandler);

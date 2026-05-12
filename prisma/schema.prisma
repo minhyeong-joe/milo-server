@@ -265,14 +265,14 @@ model DiaryMedia {
 
 model Tag {
   id        String   @id @default(uuid()) @db.Uuid
-  babyId    String   @map("baby_id") @db.Uuid
+  babyId    String?  @map("baby_id") @db.Uuid
   type      String
   name      String
   color     String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  baby         Baby @relation(fields: [babyId], references: [id], onDelete: Cascade)
+  baby         Baby? @relation(fields: [babyId], references: [id], onDelete: Cascade)
   diaryEntries DiaryTag[]
 
   @@unique([babyId, type, name])
