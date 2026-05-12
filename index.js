@@ -11,6 +11,7 @@ dotenv.config();
 const [
 	{ default: authRouter },
 	{ default: babiesRouter },
+	{ default: diaryRouter },
 	{ default: growthRouter },
 	{ default: routineRouter },
 	{ default: tagsRouter },
@@ -18,6 +19,7 @@ const [
 ] = await Promise.all([
 	import("./src/routes/auth.js"),
 	import("./src/routes/babies.js"),
+	import("./src/routes/diary.js"),
 	import("./src/routes/growth.js"),
 	import("./src/routes/routine.js"),
 	import("./src/routes/tags.js"),
@@ -69,6 +71,7 @@ app.get("/health", async (req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/babies/:babyId/diaries", diaryRouter);
 app.use("/api/babies/:babyId/growth", growthRouter);
 app.use("/api/babies/:babyId/routine", routineRouter);
 app.use("/api/babies/:babyId/tags", tagsRouter);
