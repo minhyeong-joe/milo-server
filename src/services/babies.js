@@ -1,6 +1,19 @@
+import { randomUUID } from "node:crypto";
 import prisma from "../db/prisma.js";
+import {
+	S3_PRESIGNED_PUT_EXPIRES_IN_SECONDS,
+	createPresignedGetUrl,
+	createPresignedPutUrl,
+	deleteS3Object,
+} from "../storage/s3.js";
 
-function serializeBaby(baby) {
+const AVATAR_CONTENT_TYPES = new Map([
+	["image/jpeg", "jpg"],
+	["image/png", "png"],
+	["image/webp", "webp"],
+]);
+
+async function serializeBaby(baby) {
 	return {
 		id: baby.id,
 		name: baby.name,
@@ -8,17 +21,63 @@ function serializeBaby(baby) {
 		sex: baby.sex,
 		timezone: baby.timezone,
 		avatarObjectKey: baby.avatarObjectKey,
+		avatarUrl: baby.avatarObjectKey
+			? await createPresignedGetUrl({ objectKey: baby.avatarObjectKey })
+			: null,
 		createdAt: baby.createdAt.toISOString(),
 		updatedAt: baby.updatedAt.toISOString(),
 		deletedAt: baby.deletedAt ? baby.deletedAt.toISOString() : null,
 	};
 }
 
-function serializeBabyWithRole(access) {
+async function serializeBabyWithRole(access) {
 	return {
-		...serializeBaby(access.baby),
+		...(await serializeBaby(access.baby)),
 		role: access.role,
 	};
+}
+
+function avatarObjectKeyPrefix(babyId) {
+	return `babies/${babyId}/avatar/`;
+}
+
+function createAvatarObjectKey(babyId, contentType) {
+	const extension = AVATAR_CONTENT_TYPES.get(contentType);
+	return `${avatarObjectKeyPrefix(babyId)}${randomUUID()}.${extension}`;
+}
+
+function isValidAvatarObjectKey(babyId, objectKey) {
+	return objectKey.startsWith(avatarObjectKeyPrefix(babyId));
+}
+
+async function deleteAvatarObjectBestEffort(objectKey) {
+	if (!objectKey) {
+		return;
+	}
+
+	try {
+		await deleteS3Object({ objectKey });
+	} catch (error) {
+		console.warn("Failed to delete old avatar object from S3.", error);
+	}
+}
+
+function findAccessibleBabyForUser(userId, babyId, client = prisma) {
+	return client.baby.findFirst({
+		where: {
+			id: babyId,
+			deletedAt: null,
+			users: {
+				some: {
+					userId,
+					deletedAt: null,
+					user: {
+						deletedAt: null,
+					},
+				},
+			},
+		},
+	});
 }
 
 export async function listBabiesForUser(userId) {
@@ -41,7 +100,7 @@ export async function listBabiesForUser(userId) {
 		},
 	});
 
-	return accesses.map(serializeBabyWithRole);
+	return Promise.all(accesses.map(serializeBabyWithRole));
 }
 
 export async function createBabyForUser(userId, input) {
@@ -69,7 +128,7 @@ export async function createBabyForUser(userId, input) {
 	});
 
 	return {
-		baby: serializeBaby(result.baby),
+		baby: await serializeBaby(result.baby),
 		access: {
 			id: result.access.id,
 			babyId: result.access.babyId,
@@ -110,7 +169,75 @@ export async function updateBabyForUser(userId, babyId, input) {
 	});
 
 	return {
-		baby: serializeBaby(baby),
+		baby: await serializeBaby(baby),
+	};
+}
+
+export async function createBabyAvatarUploadForUser(userId, babyId, input) {
+	if (!AVATAR_CONTENT_TYPES.has(input.contentType)) {
+		return { error: "INVALID_AVATAR_CONTENT_TYPE" };
+	}
+
+	const baby = await findAccessibleBabyForUser(userId, babyId);
+
+	if (!baby) {
+		return { error: "BABY_NOT_FOUND" };
+	}
+
+	const objectKey = createAvatarObjectKey(babyId, input.contentType);
+	const uploadUrl = await createPresignedPutUrl({
+		contentType: input.contentType,
+		objectKey,
+	});
+
+	return {
+		objectKey,
+		uploadUrl,
+		expiresIn: S3_PRESIGNED_PUT_EXPIRES_IN_SECONDS,
+	};
+}
+
+export async function confirmBabyAvatarForUser(userId, babyId, input) {
+	const baby = await findAccessibleBabyForUser(userId, babyId);
+
+	if (!baby) {
+		return { error: "BABY_NOT_FOUND" };
+	}
+
+	if (!isValidAvatarObjectKey(babyId, input.objectKey)) {
+		return { error: "INVALID_AVATAR_OBJECT_KEY" };
+	}
+
+	const updatedBaby = await prisma.baby.update({
+		where: { id: babyId },
+		data: { avatarObjectKey: input.objectKey },
+	});
+
+	if (baby.avatarObjectKey && baby.avatarObjectKey !== input.objectKey) {
+		await deleteAvatarObjectBestEffort(baby.avatarObjectKey);
+	}
+
+	return {
+		baby: await serializeBaby(updatedBaby),
+	};
+}
+
+export async function removeBabyAvatarForUser(userId, babyId) {
+	const baby = await findAccessibleBabyForUser(userId, babyId);
+
+	if (!baby) {
+		return { error: "BABY_NOT_FOUND" };
+	}
+
+	const updatedBaby = await prisma.baby.update({
+		where: { id: babyId },
+		data: { avatarObjectKey: null },
+	});
+
+	await deleteAvatarObjectBestEffort(baby.avatarObjectKey);
+
+	return {
+		baby: await serializeBaby(updatedBaby),
 	};
 }
 
