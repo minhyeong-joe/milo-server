@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import prisma from "../db/prisma.js";
 import { findAccessibleBaby } from "./babyAccess.js";
 import {
+	S3_PRESIGNED_GET_EXPIRES_IN_SECONDS,
 	S3_PRESIGNED_PUT_EXPIRES_IN_SECONDS,
 	createPresignedGetUrl,
 	createPresignedPutUrl,
@@ -155,6 +156,10 @@ function serializeTag(tag) {
 }
 
 async function serializeMedia(media) {
+	const getUrlExpiresAt = new Date(
+		Date.now() + S3_PRESIGNED_GET_EXPIRES_IN_SECONDS * 1000,
+	).toISOString();
+
 	return {
 		id: media.id,
 		diaryId: media.diaryId,
@@ -168,9 +173,11 @@ async function serializeMedia(media) {
 		mediaUrl: media.objectKey
 			? await createPresignedGetUrl({ objectKey: media.objectKey })
 			: null,
+		mediaUrlExpiresAt: media.objectKey ? getUrlExpiresAt : null,
 		thumbnailUrl: media.thumbnailObjectKey
 			? await createPresignedGetUrl({ objectKey: media.thumbnailObjectKey })
 			: null,
+		thumbnailUrlExpiresAt: media.thumbnailObjectKey ? getUrlExpiresAt : null,
 	};
 }
 
