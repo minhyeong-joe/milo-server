@@ -3,7 +3,20 @@ import { findAccessibleBaby } from "./babyAccess.js";
 
 const DEFAULT_DIARY_LIST_LIMIT = 30;
 
+const DIARY_ORDER_BY = [
+	{ diaryDate: "desc" },
+	{ createdAt: "desc" },
+	{ id: "desc" },
+];
+
 const diaryInclude = {
+	createdBy: {
+		select: {
+			id: true,
+			displayName: true,
+			email: true,
+		},
+	},
 	media: {
 		orderBy: { id: "asc" },
 	},
@@ -17,6 +30,13 @@ const diaryInclude = {
 			},
 		},
 	},
+	updatedBy: {
+		select: {
+			id: true,
+			displayName: true,
+			email: true,
+		},
+	},
 };
 
 function dateOnly(value) {
@@ -25,6 +45,79 @@ function dateOnly(value) {
 
 function dateString(value) {
 	return value.toISOString().slice(0, 10);
+}
+
+function isValidDateString(value) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+		return false;
+	}
+
+	const date = dateOnly(value);
+
+	return !Number.isNaN(date.getTime()) && dateString(date) === value;
+}
+
+function encodeDiaryCursor(entry) {
+	const payload = JSON.stringify({
+		createdAt: entry.createdAt.toISOString(),
+		diaryDate: dateString(entry.diaryDate),
+		id: entry.id,
+	});
+
+	return Buffer.from(payload, "utf8").toString("base64url");
+}
+
+function decodeDiaryCursor(cursor) {
+	try {
+		const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+		const payload = JSON.parse(decoded);
+
+		if (
+			typeof payload !== "object" ||
+			payload === null ||
+			typeof payload.diaryDate !== "string" ||
+			typeof payload.createdAt !== "string" ||
+			typeof payload.id !== "string" ||
+			!isValidDateString(payload.diaryDate)
+		) {
+			return null;
+		}
+
+		const createdAt = new Date(payload.createdAt);
+
+		if (Number.isNaN(createdAt.getTime())) {
+			return null;
+		}
+
+		return {
+			createdAt,
+			diaryDate: dateOnly(payload.diaryDate),
+			id: payload.id,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function getCursorWhere(cursor) {
+	return {
+		OR: [
+			{ diaryDate: { lt: cursor.diaryDate } },
+			{
+				AND: [
+					{ diaryDate: cursor.diaryDate },
+					{ createdAt: { lt: cursor.createdAt } },
+				],
+			},
+			{
+				AND: [
+					{ diaryDate: cursor.diaryDate },
+					{ createdAt: cursor.createdAt },
+					{ id: { lt: cursor.id } },
+				],
+			},
+		],
+	};
 }
 
 function serializeTag(tag) {
@@ -51,6 +144,18 @@ function serializeMedia(media) {
 	};
 }
 
+function serializeUser(user) {
+	if (!user) {
+		return null;
+	}
+
+	return {
+		id: user.id,
+		displayName: user.displayName,
+		email: user.email,
+	};
+}
+
 function serializeDiaryEntry(entry) {
 	return {
 		id: entry.id,
@@ -59,6 +164,8 @@ function serializeDiaryEntry(entry) {
 		diaryDate: dateString(entry.diaryDate),
 		createdById: entry.createdById,
 		updatedById: entry.updatedById,
+		createdBy: serializeUser(entry.createdBy),
+		updatedBy: serializeUser(entry.updatedBy),
 		createdAt: entry.createdAt.toISOString(),
 		updatedAt: entry.updatedAt.toISOString(),
 		media: entry.media.map(serializeMedia),
@@ -161,22 +268,37 @@ export async function listDiaryEntriesForUser(userId, babyId, input = {}) {
 		return { error: "BABY_NOT_FOUND" };
 	}
 
+	const cursor = input.cursor ? decodeDiaryCursor(input.cursor) : null;
+
+	if (input.cursor && !cursor) {
+		return { error: "INVALID_DIARY_CURSOR" };
+	}
+
+	const take = input.take ?? DEFAULT_DIARY_LIST_LIMIT;
+
 	const entries = await prisma.diaryEntry.findMany({
 		where: {
 			babyId,
-			...(input.endDate
+			...(cursor
+				? getCursorWhere(cursor)
+				: input.endDate
 				? {
 						diaryDate: { lte: dateOnly(input.endDate) },
 					}
 				: {}),
 		},
 		include: diaryInclude,
-		orderBy: [{ diaryDate: "desc" }, { createdAt: "desc" }],
-		take: input.take ?? DEFAULT_DIARY_LIST_LIMIT,
+		orderBy: DIARY_ORDER_BY,
+		take: take + 1,
 	});
+	const pageEntries = entries.slice(0, take);
+	const nextCursor = entries.length > take
+		? encodeDiaryCursor(pageEntries[pageEntries.length - 1])
+		: null;
 
 	return {
-		diaryEntries: entries.map(serializeDiaryEntry),
+		diaryEntries: pageEntries.map(serializeDiaryEntry),
+		nextCursor,
 	};
 }
 

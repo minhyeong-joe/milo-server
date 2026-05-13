@@ -43,6 +43,7 @@ const diaryParamsSchema = babyParamsSchema.extend({
 });
 
 const listDiaryQuerySchema = z.object({
+	cursor: z.string().trim().min(1).optional(),
 	endDate: dateStringSchema.optional(),
 	take: z.coerce.number().int().positive().max(100).optional(),
 });
@@ -116,6 +117,15 @@ function sendDiaryServiceError(res, code) {
 			409,
 			"DIARY_MEDIA_OBJECT_KEY_EXISTS",
 			"A diary media object key already exists.",
+		);
+	}
+
+	if (code === "INVALID_DIARY_CURSOR") {
+		return sendError(
+			res,
+			400,
+			"INVALID_DIARY_CURSOR",
+			"Diary pagination cursor is invalid.",
 		);
 	}
 
