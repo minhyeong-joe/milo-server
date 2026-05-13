@@ -10,11 +10,11 @@ import {
 
 const DEFAULT_DIARY_LIST_LIMIT = 30;
 export const DIARY_MEDIA_LIMITS = {
-	MAX_PHOTOS: 3,
-	MAX_VIDEOS: 1,
+	MAX_PHOTOS: 10,
+	MAX_VIDEOS: 3,
 	MAX_PHOTO_SIZE_BYTES: 8 * 1024 * 1024,
 	MAX_VIDEO_SIZE_BYTES: 30 * 1024 * 1024,
-	MAX_TOTAL_SIZE_BYTES: 45 * 1024 * 1024,
+	MAX_TOTAL_SIZE_BYTES: 100 * 1024 * 1024,
 };
 const DIARY_MEDIA_CONTENT_TYPES = new Map([
 	["image/jpeg", { extension: "jpg", kind: "photo" }],
@@ -656,7 +656,7 @@ export async function updateDiaryEntryForUser(userId, babyId, diaryId, input) {
 }
 
 export async function deleteDiaryEntryForUser(userId, babyId, diaryId) {
-	return prisma.$transaction(async (tx) => {
+	const result = await prisma.$transaction(async (tx) => {
 		const baby = await findAccessibleBaby(userId, babyId, tx);
 
 		if (!baby) {
@@ -669,10 +669,37 @@ export async function deleteDiaryEntryForUser(userId, babyId, diaryId) {
 			return { error: "DIARY_ENTRY_NOT_FOUND" };
 		}
 
+		const media = await tx.diaryMedia.findMany({
+			where: { diaryId },
+			select: {
+				objectKey: true,
+				thumbnailObjectKey: true,
+			},
+		});
+
 		await tx.diaryEntry.delete({
 			where: { id: diaryId },
 		});
 
-		return { deleted: true };
+		return {
+			deleted: true,
+			deletedObjectKeys: media.flatMap((item) =>
+				[item.objectKey, item.thumbnailObjectKey].filter(Boolean),
+			),
+		};
 	});
+
+	if (result.deletedObjectKeys) {
+		await Promise.all(
+			result.deletedObjectKeys.map(async (objectKey) => {
+				try {
+					await deleteS3Object({ objectKey });
+				} catch (error) {
+					console.warn("Failed to delete diary media object from S3.", error);
+				}
+			}),
+		);
+	}
+
+	return result.error ? result : { deleted: true };
 }
