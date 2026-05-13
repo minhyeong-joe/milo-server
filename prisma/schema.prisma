@@ -250,16 +250,20 @@ model DiaryEntry {
 }
 
 model DiaryMedia {
-  id          String  @id @default(uuid()) @db.Uuid
-  diaryId     String  @map("diary_id") @db.Uuid
-  fileType    String  @map("file_type")
-  description String?
-  objectKey   String  @unique @map("object_key")
-  sizeBytes   Int     @map("size_bytes")
+  id                 String  @id @default(uuid()) @db.Uuid
+  diaryId            String  @map("diary_id") @db.Uuid
+  fileType           String  @map("file_type")
+  description        String?
+  objectKey          String  @unique @map("object_key")
+  sizeBytes          Int     @map("size_bytes")
+  thumbnailObjectKey String? @map("thumbnail_object_key")
+  thumbnailFileType  String? @map("thumbnail_file_type")
+  thumbnailSizeBytes Int?    @map("thumbnail_size_bytes")
 
   diary DiaryEntry @relation(fields: [diaryId], references: [id], onDelete: Cascade)
 
   @@index([diaryId])
+  @@index([thumbnailObjectKey])
   @@map("diary_media")
 }
 

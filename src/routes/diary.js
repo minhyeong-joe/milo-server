@@ -5,8 +5,10 @@ import { sendError } from "../http/errors.js";
 import { parseBody, parseParams, parseQuery } from "../http/validation.js";
 import {
 	createDiaryEntryForUser,
+	createDiaryMediaUploadForUser,
 	deleteDiaryEntryForUser,
 	listDiaryEntriesForUser,
+	removeDiaryMediaUploadForUser,
 	updateDiaryEntryForUser,
 } from "../services/diary.js";
 
@@ -32,6 +34,17 @@ const mediaSchema = z.object({
 	description: z.string().trim().max(200).nullable().optional(),
 	objectKey: z.string().trim().min(1).max(500),
 	sizeBytes: z.number().int().nonnegative(),
+	thumbnailObjectKey: z.string().trim().min(1).max(500).nullable().optional(),
+	thumbnailFileType: z.string().trim().min(1).max(80).nullable().optional(),
+	thumbnailSizeBytes: z.number().int().nonnegative().nullable().optional(),
+});
+const mediaUploadSchema = z.object({
+	fileType: z.string().trim().min(1).max(80),
+	sizeBytes: z.number().int().nonnegative(),
+	uploadPurpose: z.enum(["media", "thumbnail"]).default("media"),
+});
+const mediaDeleteSchema = z.object({
+	objectKey: z.string().trim().min(1).max(500),
 });
 
 const babyParamsSchema = z.object({
@@ -120,6 +133,51 @@ function sendDiaryServiceError(res, code) {
 		);
 	}
 
+	if (code === "INVALID_DIARY_MEDIA_TYPE") {
+		return sendError(
+			res,
+			400,
+			"INVALID_DIARY_MEDIA_TYPE",
+			"Diary media type is not supported.",
+		);
+	}
+
+	if (code === "DIARY_MEDIA_FILE_TOO_LARGE") {
+		return sendError(
+			res,
+			400,
+			"DIARY_MEDIA_FILE_TOO_LARGE",
+			"Diary media file is too large.",
+		);
+	}
+
+	if (code === "DIARY_MEDIA_COUNT_LIMIT") {
+		return sendError(
+			res,
+			400,
+			"DIARY_MEDIA_COUNT_LIMIT",
+			"Diary media count limit was exceeded.",
+		);
+	}
+
+	if (code === "DIARY_MEDIA_TOTAL_SIZE_LIMIT") {
+		return sendError(
+			res,
+			400,
+			"DIARY_MEDIA_TOTAL_SIZE_LIMIT",
+			"Diary media total size limit was exceeded.",
+		);
+	}
+
+	if (code === "INVALID_DIARY_MEDIA_OBJECT_KEY") {
+		return sendError(
+			res,
+			400,
+			"INVALID_DIARY_MEDIA_OBJECT_KEY",
+			"Diary media object key is not valid for this baby.",
+		);
+	}
+
 	if (code === "INVALID_DIARY_CURSOR") {
 		return sendError(
 			res,
@@ -164,6 +222,66 @@ router.get("/", async (req, res, next) => {
 		}
 
 		return res.json(result);
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.post("/media/presign-upload", async (req, res, next) => {
+	try {
+		const parsedParams = parseParams(babyParamsSchema, req.params);
+
+		if (parsedParams.error) {
+			return sendParsedError(res, parsedParams);
+		}
+
+		const parsedBody = parseBody(mediaUploadSchema, req.body);
+
+		if (parsedBody.error) {
+			return sendParsedError(res, parsedBody);
+		}
+
+		const result = await createDiaryMediaUploadForUser(
+			req.user.id,
+			parsedParams.data.babyId,
+			parsedBody.data,
+		);
+
+		if (result.error) {
+			return sendDiaryServiceError(res, result.error);
+		}
+
+		return res.json(result);
+	} catch (error) {
+		return next(error);
+	}
+});
+
+router.delete("/media", async (req, res, next) => {
+	try {
+		const parsedParams = parseParams(babyParamsSchema, req.params);
+
+		if (parsedParams.error) {
+			return sendParsedError(res, parsedParams);
+		}
+
+		const parsedBody = parseBody(mediaDeleteSchema, req.body);
+
+		if (parsedBody.error) {
+			return sendParsedError(res, parsedBody);
+		}
+
+		const result = await removeDiaryMediaUploadForUser(
+			req.user.id,
+			parsedParams.data.babyId,
+			parsedBody.data,
+		);
+
+		if (result.error) {
+			return sendDiaryServiceError(res, result.error);
+		}
+
+		return res.status(204).send();
 	} catch (error) {
 		return next(error);
 	}

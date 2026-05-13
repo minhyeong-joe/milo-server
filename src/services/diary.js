@@ -1,7 +1,28 @@
+import { randomUUID } from "node:crypto";
 import prisma from "../db/prisma.js";
 import { findAccessibleBaby } from "./babyAccess.js";
+import {
+	S3_PRESIGNED_PUT_EXPIRES_IN_SECONDS,
+	createPresignedGetUrl,
+	createPresignedPutUrl,
+	deleteS3Object,
+} from "../storage/s3.js";
 
 const DEFAULT_DIARY_LIST_LIMIT = 30;
+export const DIARY_MEDIA_LIMITS = {
+	MAX_PHOTOS: 3,
+	MAX_VIDEOS: 1,
+	MAX_PHOTO_SIZE_BYTES: 8 * 1024 * 1024,
+	MAX_VIDEO_SIZE_BYTES: 30 * 1024 * 1024,
+	MAX_TOTAL_SIZE_BYTES: 45 * 1024 * 1024,
+};
+const DIARY_MEDIA_CONTENT_TYPES = new Map([
+	["image/jpeg", { extension: "jpg", kind: "photo" }],
+	["image/png", { extension: "png", kind: "photo" }],
+	["image/webp", { extension: "webp", kind: "photo" }],
+	["video/mp4", { extension: "mp4", kind: "video" }],
+	["video/quicktime", { extension: "mov", kind: "video" }],
+]);
 
 const DIARY_ORDER_BY = [
 	{ diaryDate: "desc" },
@@ -133,7 +154,7 @@ function serializeTag(tag) {
 	};
 }
 
-function serializeMedia(media) {
+async function serializeMedia(media) {
 	return {
 		id: media.id,
 		diaryId: media.diaryId,
@@ -141,6 +162,15 @@ function serializeMedia(media) {
 		description: media.description,
 		objectKey: media.objectKey,
 		sizeBytes: media.sizeBytes,
+		thumbnailObjectKey: media.thumbnailObjectKey,
+		thumbnailFileType: media.thumbnailFileType,
+		thumbnailSizeBytes: media.thumbnailSizeBytes,
+		mediaUrl: media.objectKey
+			? await createPresignedGetUrl({ objectKey: media.objectKey })
+			: null,
+		thumbnailUrl: media.thumbnailObjectKey
+			? await createPresignedGetUrl({ objectKey: media.thumbnailObjectKey })
+			: null,
 	};
 }
 
@@ -156,7 +186,7 @@ function serializeUser(user) {
 	};
 }
 
-function serializeDiaryEntry(entry) {
+async function serializeDiaryEntry(entry) {
 	return {
 		id: entry.id,
 		babyId: entry.babyId,
@@ -168,7 +198,7 @@ function serializeDiaryEntry(entry) {
 		updatedBy: serializeUser(entry.updatedBy),
 		createdAt: entry.createdAt.toISOString(),
 		updatedAt: entry.updatedAt.toISOString(),
-		media: entry.media.map(serializeMedia),
+		media: await Promise.all(entry.media.map(serializeMedia)),
 		tags: entry.tags.map((row) => serializeTag(row.tag)),
 	};
 }
@@ -179,6 +209,9 @@ function normalizeMediaInput(media = []) {
 		description: item.description ?? null,
 		objectKey: item.objectKey,
 		sizeBytes: item.sizeBytes,
+		thumbnailObjectKey: item.thumbnailObjectKey ?? null,
+		thumbnailFileType: item.thumbnailFileType ?? null,
+		thumbnailSizeBytes: item.thumbnailSizeBytes ?? null,
 	}));
 }
 
@@ -199,6 +232,119 @@ function getDailyLimit() {
 function hasDuplicateObjectKeys(media = []) {
 	const objectKeys = media.map((item) => item.objectKey);
 	return new Set(objectKeys).size !== objectKeys.length;
+}
+
+function diaryMediaObjectKeyPrefix(babyId) {
+	return `babies/${babyId}/diary-media/`;
+}
+
+function createDiaryMediaObjectKey(babyId, fileType, uploadPurpose = "media") {
+	const contentType = DIARY_MEDIA_CONTENT_TYPES.get(fileType);
+	const suffix = uploadPurpose === "thumbnail" ? "-thumb" : "";
+	return `${diaryMediaObjectKeyPrefix(babyId)}${randomUUID()}${suffix}.${contentType.extension}`;
+}
+
+function isValidDiaryMediaObjectKey(babyId, objectKey) {
+	return objectKey.startsWith(diaryMediaObjectKeyPrefix(babyId));
+}
+
+function getMediaKind(fileType) {
+	return DIARY_MEDIA_CONTENT_TYPES.get(fileType)?.kind ?? null;
+}
+
+function validateDiaryMediaUploadInput(input) {
+	const kind = getMediaKind(input.fileType);
+
+	if (!kind) {
+		return "INVALID_DIARY_MEDIA_TYPE";
+	}
+
+	if (input.uploadPurpose === "thumbnail" && kind !== "photo") {
+		return "INVALID_DIARY_MEDIA_TYPE";
+	}
+
+	if (
+		kind === "photo" &&
+		input.sizeBytes > DIARY_MEDIA_LIMITS.MAX_PHOTO_SIZE_BYTES
+	) {
+		return "DIARY_MEDIA_FILE_TOO_LARGE";
+	}
+
+	if (
+		kind === "video" &&
+		input.sizeBytes > DIARY_MEDIA_LIMITS.MAX_VIDEO_SIZE_BYTES
+	) {
+		return "DIARY_MEDIA_FILE_TOO_LARGE";
+	}
+
+	return null;
+}
+
+function validateDiaryMediaInput(babyId, media = []) {
+	if (hasDuplicateObjectKeys(media)) {
+		return "DIARY_MEDIA_OBJECT_KEY_EXISTS";
+	}
+
+	let photoCount = 0;
+	let videoCount = 0;
+	let totalSizeBytes = 0;
+
+	for (const item of media) {
+		const validationError = validateDiaryMediaUploadInput(item);
+
+		if (validationError) {
+			return validationError;
+		}
+
+		if (!isValidDiaryMediaObjectKey(babyId, item.objectKey)) {
+			return "INVALID_DIARY_MEDIA_OBJECT_KEY";
+		}
+
+		if (item.thumbnailObjectKey) {
+			if (!isValidDiaryMediaObjectKey(babyId, item.thumbnailObjectKey)) {
+				return "INVALID_DIARY_MEDIA_OBJECT_KEY";
+			}
+
+			if (
+				!item.thumbnailFileType ||
+				getMediaKind(item.thumbnailFileType) !== "photo"
+			) {
+				return "INVALID_DIARY_MEDIA_TYPE";
+			}
+
+			if (
+				item.thumbnailSizeBytes !== undefined &&
+				item.thumbnailSizeBytes !== null &&
+				item.thumbnailSizeBytes > DIARY_MEDIA_LIMITS.MAX_PHOTO_SIZE_BYTES
+			) {
+				return "DIARY_MEDIA_FILE_TOO_LARGE";
+			}
+		}
+
+		const kind = getMediaKind(item.fileType);
+		totalSizeBytes += item.sizeBytes;
+
+		if (kind === "photo") {
+			photoCount += 1;
+		}
+
+		if (kind === "video") {
+			videoCount += 1;
+		}
+	}
+
+	if (
+		photoCount > DIARY_MEDIA_LIMITS.MAX_PHOTOS ||
+		videoCount > DIARY_MEDIA_LIMITS.MAX_VIDEOS
+	) {
+		return "DIARY_MEDIA_COUNT_LIMIT";
+	}
+
+	if (totalSizeBytes > DIARY_MEDIA_LIMITS.MAX_TOTAL_SIZE_BYTES) {
+		return "DIARY_MEDIA_TOTAL_SIZE_LIMIT";
+	}
+
+	return null;
 }
 
 function isUniqueConstraintError(error) {
@@ -297,14 +443,66 @@ export async function listDiaryEntriesForUser(userId, babyId, input = {}) {
 		: null;
 
 	return {
-		diaryEntries: pageEntries.map(serializeDiaryEntry),
+		diaryEntries: await Promise.all(pageEntries.map(serializeDiaryEntry)),
 		nextCursor,
 	};
 }
 
+export async function createDiaryMediaUploadForUser(userId, babyId, input) {
+	const validationError = validateDiaryMediaUploadInput(input);
+
+	if (validationError) {
+		return { error: validationError };
+	}
+
+	const baby = await findAccessibleBaby(userId, babyId);
+
+	if (!baby) {
+		return { error: "BABY_NOT_FOUND" };
+	}
+
+	const objectKey = createDiaryMediaObjectKey(
+		babyId,
+		input.fileType,
+		input.uploadPurpose,
+	);
+	const uploadUrl = await createPresignedPutUrl({
+		contentType: input.fileType,
+		objectKey,
+	});
+
+	return {
+		objectKey,
+		uploadUrl,
+		expiresIn: S3_PRESIGNED_PUT_EXPIRES_IN_SECONDS,
+	};
+}
+
+export async function removeDiaryMediaUploadForUser(userId, babyId, input) {
+	const baby = await findAccessibleBaby(userId, babyId);
+
+	if (!baby) {
+		return { error: "BABY_NOT_FOUND" };
+	}
+
+	if (!isValidDiaryMediaObjectKey(babyId, input.objectKey)) {
+		return { error: "INVALID_DIARY_MEDIA_OBJECT_KEY" };
+	}
+
+	try {
+		await deleteS3Object({ objectKey: input.objectKey });
+	} catch (error) {
+		console.warn("Failed to delete diary media object from S3.", error);
+	}
+
+	return { deleted: true };
+}
+
 export async function createDiaryEntryForUser(userId, babyId, input) {
-	if (hasDuplicateObjectKeys(input.media)) {
-		return { error: "DIARY_MEDIA_OBJECT_KEY_EXISTS" };
+	const mediaValidationError = validateDiaryMediaInput(babyId, input.media);
+
+	if (mediaValidationError) {
+		return { error: mediaValidationError };
 	}
 
 	try {
@@ -345,7 +543,7 @@ export async function createDiaryEntryForUser(userId, babyId, input) {
 				include: diaryInclude,
 			});
 
-			return { diaryEntry: serializeDiaryEntry(entry) };
+			return { diaryEntry: await serializeDiaryEntry(entry) };
 		});
 	} catch (error) {
 		if (isUniqueConstraintError(error)) {
@@ -357,8 +555,12 @@ export async function createDiaryEntryForUser(userId, babyId, input) {
 }
 
 export async function updateDiaryEntryForUser(userId, babyId, diaryId, input) {
-	if (input.media && hasDuplicateObjectKeys(input.media)) {
-		return { error: "DIARY_MEDIA_OBJECT_KEY_EXISTS" };
+	if (input.media) {
+		const mediaValidationError = validateDiaryMediaInput(babyId, input.media);
+
+		if (mediaValidationError) {
+			return { error: mediaValidationError };
+		}
 	}
 
 	try {
@@ -442,7 +644,7 @@ export async function updateDiaryEntryForUser(userId, babyId, diaryId, input) {
 
 			const entry = await fetchDiaryEntry(tx, diaryId);
 
-			return { diaryEntry: serializeDiaryEntry(entry) };
+			return { diaryEntry: await serializeDiaryEntry(entry) };
 		});
 	} catch (error) {
 		if (isUniqueConstraintError(error)) {
