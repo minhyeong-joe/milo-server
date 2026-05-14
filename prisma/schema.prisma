@@ -230,6 +230,7 @@ model BabyGrowth {
 model DiaryEntry {
   id           String   @id @default(uuid()) @db.Uuid
   babyId       String   @map("baby_id") @db.Uuid
+  title        String?  @db.VarChar(80)
   content      String   @db.VarChar(500)
   diaryDate    DateTime @map("diary_date") @db.Date
   createdById  String   @map("created_by") @db.Uuid
@@ -256,13 +257,14 @@ model DiaryMedia {
   description        String?
   objectKey          String  @unique @map("object_key")
   sizeBytes          Int     @map("size_bytes")
+  sortOrder          Int     @default(0) @map("sort_order")
   thumbnailObjectKey String? @map("thumbnail_object_key")
   thumbnailFileType  String? @map("thumbnail_file_type")
   thumbnailSizeBytes Int?    @map("thumbnail_size_bytes")
 
   diary DiaryEntry @relation(fields: [diaryId], references: [id], onDelete: Cascade)
 
-  @@index([diaryId])
+  @@index([diaryId, sortOrder])
   @@index([thumbnailObjectKey])
   @@map("diary_media")
 }

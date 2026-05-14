@@ -40,7 +40,7 @@ const diaryInclude = {
 		},
 	},
 	media: {
-		orderBy: { id: "asc" },
+		orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
 	},
 	tags: {
 		include: {
@@ -67,6 +67,15 @@ function dateOnly(value) {
 
 function dateString(value) {
 	return value.toISOString().slice(0, 10);
+}
+
+function normalizeTitle(value) {
+	if (value === undefined) {
+		return undefined;
+	}
+
+	const trimmed = value?.trim() ?? "";
+	return trimmed.length > 0 ? trimmed : null;
 }
 
 function isValidDateString(value) {
@@ -167,6 +176,7 @@ async function serializeMedia(media) {
 		description: media.description,
 		objectKey: media.objectKey,
 		sizeBytes: media.sizeBytes,
+		sortOrder: media.sortOrder,
 		thumbnailObjectKey: media.thumbnailObjectKey,
 		thumbnailFileType: media.thumbnailFileType,
 		thumbnailSizeBytes: media.thumbnailSizeBytes,
@@ -197,6 +207,7 @@ async function serializeDiaryEntry(entry) {
 	return {
 		id: entry.id,
 		babyId: entry.babyId,
+		title: entry.title,
 		content: entry.content,
 		diaryDate: dateString(entry.diaryDate),
 		createdById: entry.createdById,
@@ -211,11 +222,12 @@ async function serializeDiaryEntry(entry) {
 }
 
 function normalizeMediaInput(media = []) {
-	return media.map((item) => ({
+	return media.map((item, index) => ({
 		fileType: item.fileType,
 		description: item.description ?? null,
 		objectKey: item.objectKey,
 		sizeBytes: item.sizeBytes,
+		sortOrder: item.sortOrder ?? index,
 		thumbnailObjectKey: item.thumbnailObjectKey ?? null,
 		thumbnailFileType: item.thumbnailFileType ?? null,
 		thumbnailSizeBytes: item.thumbnailSizeBytes ?? null,
@@ -536,6 +548,7 @@ export async function createDiaryEntryForUser(userId, babyId, input) {
 			const entry = await tx.diaryEntry.create({
 				data: {
 					babyId,
+					title: normalizeTitle(input.title) ?? null,
 					content: input.content,
 					diaryDate,
 					createdById: userId,
@@ -611,6 +624,7 @@ export async function updateDiaryEntryForUser(userId, babyId, diaryId, input) {
 			await tx.diaryEntry.update({
 				where: { id: diaryId },
 				data: {
+					...(input.title !== undefined ? { title: normalizeTitle(input.title) } : {}),
 					...(input.content !== undefined ? { content: input.content } : {}),
 					...(input.diaryDate !== undefined ? { diaryDate: nextDiaryDate } : {}),
 					updatedById: userId,

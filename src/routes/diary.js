@@ -29,11 +29,13 @@ function isValidDateString(value) {
 
 const dateStringSchema = z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date.");
 const contentSchema = z.string().trim().min(1).max(500);
+const titleSchema = z.string().trim().max(80).nullable();
 const mediaSchema = z.object({
 	fileType: z.string().trim().min(1).max(80),
 	description: z.string().trim().max(200).nullable().optional(),
 	objectKey: z.string().trim().min(1).max(500),
 	sizeBytes: z.number().int().nonnegative(),
+	sortOrder: z.number().int().nonnegative().optional(),
 	thumbnailObjectKey: z.string().trim().min(1).max(500).nullable().optional(),
 	thumbnailFileType: z.string().trim().min(1).max(80).nullable().optional(),
 	thumbnailSizeBytes: z.number().int().nonnegative().nullable().optional(),
@@ -66,6 +68,7 @@ const createDiaryBodySchema = z.object({
 	diaryDate: dateStringSchema,
 	media: z.array(mediaSchema).max(20).default([]),
 	tagIds: z.array(z.uuid()).max(30).default([]),
+	title: titleSchema.optional(),
 });
 
 const updateDiaryBodySchema = z
@@ -74,13 +77,15 @@ const updateDiaryBodySchema = z
 		diaryDate: dateStringSchema.optional(),
 		media: z.array(mediaSchema).max(20).optional(),
 		tagIds: z.array(z.uuid()).max(30).optional(),
+		title: titleSchema.optional(),
 	})
 	.refine(
 		(value) =>
 			value.content !== undefined ||
 			value.diaryDate !== undefined ||
 			value.media !== undefined ||
-			value.tagIds !== undefined,
+			value.tagIds !== undefined ||
+			value.title !== undefined,
 		{
 			message: "At least one diary field is required.",
 		},
