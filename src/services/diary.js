@@ -151,6 +151,101 @@ function getCursorWhere(cursor) {
 	};
 }
 
+function getDiaryListWhere(babyId, input, cursor) {
+	const andFilters = [{ babyId }];
+
+	if (cursor) {
+		andFilters.push(getCursorWhere(cursor));
+	} else {
+		const diaryDate = {};
+
+		if (input.startDate) {
+			diaryDate.gte = dateOnly(input.startDate);
+		}
+
+		if (input.endDate) {
+			diaryDate.lte = dateOnly(input.endDate);
+		}
+
+		if (Object.keys(diaryDate).length > 0) {
+			andFilters.push({ diaryDate });
+		}
+	}
+
+	if (input.search) {
+		const search = input.search.trim();
+
+		if (search) {
+			andFilters.push({
+				OR: [
+					{ title: { contains: search, mode: "insensitive" } },
+					{ content: { contains: search, mode: "insensitive" } },
+				],
+			});
+		}
+	}
+
+	if (input.includeMedia === true) {
+		andFilters.push({ media: { some: {} } });
+	}
+
+	if (input.includeMedia === false) {
+		andFilters.push({ media: { none: {} } });
+	}
+
+	if (input.tagIds?.length > 0) {
+		andFilters.push({
+			tags: {
+				some: {
+					tagId: { in: input.tagIds },
+				},
+			},
+		});
+	}
+
+	if (input.tagTypes?.length > 0) {
+		const tagTypeFilters = buildTagTypeFilters(babyId, input.tagTypes);
+
+		if (tagTypeFilters.length > 0) {
+			andFilters.push({
+				tags: {
+					some: {
+						tag: {
+							OR: tagTypeFilters,
+						},
+					},
+				},
+			});
+		}
+	}
+
+	return { AND: andFilters };
+}
+
+function buildTagTypeFilters(babyId, tagTypes) {
+	const normalizedTypes = uniqueValues(
+		tagTypes
+			.map((type) => type.trim().toLowerCase())
+			.filter(Boolean),
+	);
+	const filters = [];
+	const defaultTypes = normalizedTypes.filter((type) => type !== "custom");
+
+	if (defaultTypes.length > 0) {
+		filters.push({
+			type: { in: defaultTypes },
+		});
+	}
+
+	if (normalizedTypes.includes("custom")) {
+		filters.push({
+			babyId,
+		});
+	}
+
+	return filters;
+}
+
 function serializeTag(tag) {
 	return {
 		id: tag.id,
@@ -442,16 +537,7 @@ export async function listDiaryEntriesForUser(userId, babyId, input = {}) {
 	const take = input.take ?? DEFAULT_DIARY_LIST_LIMIT;
 
 	const entries = await prisma.diaryEntry.findMany({
-		where: {
-			babyId,
-			...(cursor
-				? getCursorWhere(cursor)
-				: input.endDate
-				? {
-						diaryDate: { lte: dateOnly(input.endDate) },
-					}
-				: {}),
-		},
+		where: getDiaryListWhere(babyId, input, cursor),
 		include: diaryInclude,
 		orderBy: DIARY_ORDER_BY,
 		take: take + 1,

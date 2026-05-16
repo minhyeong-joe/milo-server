@@ -60,8 +60,38 @@ const diaryParamsSchema = babyParamsSchema.extend({
 const listDiaryQuerySchema = z.object({
 	cursor: z.string().trim().min(1).optional(),
 	endDate: dateStringSchema.optional(),
+	includeMedia: z.enum(["true", "false"]).optional().transform((value) =>
+		value === undefined ? undefined : value === "true",
+	),
+	search: z.string().trim().max(120).optional(),
+	startDate: dateStringSchema.optional(),
+	tagIds: z.string().trim().max(2000).optional().transform(splitCsv).refine(
+		(values) => values.every((value) => z.uuid().safeParse(value).success),
+		"tagIds must be comma-separated UUIDs.",
+	),
+	tagTypes: z.string().trim().max(500).optional().transform(splitCsv),
 	take: z.coerce.number().int().positive().max(100).optional(),
-});
+}).refine(
+	(value) =>
+		!value.startDate ||
+		!value.endDate ||
+		value.endDate >= value.startDate,
+	{
+		message: "endDate must be greater than or equal to startDate.",
+		path: ["endDate"],
+	},
+);
+
+function splitCsv(value) {
+	if (!value) {
+		return [];
+	}
+
+	return value
+		.split(",")
+		.map((item) => item.trim())
+		.filter(Boolean);
+}
 
 const createDiaryBodySchema = z.object({
 	content: contentSchema,
