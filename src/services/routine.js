@@ -91,6 +91,7 @@ function serializeBaby(baby) {
 function serializeMeal(row) {
 	return {
 		id: row.id,
+		clientMutationId: row.clientMutationId,
 		kind: "meal",
 		time: row.loggedAt.toISOString(),
 		type: row.mealType,
@@ -106,6 +107,7 @@ function serializeMeal(row) {
 function serializeDiaper(row) {
 	return {
 		id: row.id,
+		clientMutationId: row.clientMutationId,
 		kind: "diaper",
 		time: row.loggedAt.toISOString(),
 		type: row.diaperType,
@@ -117,6 +119,7 @@ function serializeDiaper(row) {
 function serializeSleep(row) {
 	return {
 		id: row.id,
+		clientMutationId: row.clientMutationId,
 		kind: "sleep",
 		type: row.sleepType,
 		startTime: row.startTime.toISOString(),
@@ -1047,6 +1050,34 @@ export async function createRoutineLogForUser(userId, babyId, input) {
 		);
 
 		if (existingRow) {
+			if (input.kind === "sleep" && input.endTime) {
+				const before = existingRow;
+				const after = await tx.sleepSession.update({
+					where: { id: existingRow.id },
+					data: normalizeSleepInput(input),
+				});
+				const summaryDates = [
+					getSummaryForStoredRow(input.kind, before, baby.timezone),
+					getSummaryForStoredRow(input.kind, after, baby.timezone),
+				]
+					.filter(Boolean)
+					.sort();
+				const affectedDates = [
+					getTimelineDateForStoredRow(input.kind, before, baby.timezone),
+					getTimelineDateForStoredRow(input.kind, after, baby.timezone),
+				]
+					.filter(Boolean)
+					.sort();
+
+				await recomputeSummaries(tx, baby, summaryDates);
+
+				return {
+					event: serializeSleep(after),
+					affectedDailyLogs: await getAffectedDailyLogs(tx, baby, [...new Set(affectedDates)]),
+					lastLogged: await getLastLoggedForBaby(tx, baby.id),
+				};
+			}
+
 			return getMutationResponseForStoredRow(tx, baby, input.kind, existingRow);
 		}
 
