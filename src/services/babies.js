@@ -165,6 +165,7 @@ export async function updateBabyForUser(userId, babyId, input) {
 			name: input.name,
 			birthdate: new Date(`${input.birthdate}T00:00:00.000Z`),
 			sex: input.sex,
+			...(input.timezone ? { timezone: input.timezone } : {}),
 		},
 	});
 

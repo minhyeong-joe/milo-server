@@ -28,11 +28,20 @@ function isValidDateString(value) {
 	);
 }
 
+function isValidTimeZone(value) {
+	try {
+		new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 const createBabySchema = z.object({
 	name: z.string().trim().min(1).max(80),
 	birthdate: z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date."),
 	sex: z.enum(["GIRL", "BOY"]).default("BOY"),
-	timezone: z.string().trim().min(1).default("America/Los_Angeles"),
+	timezone: z.string().trim().min(1).refine(isValidTimeZone, "Must be a valid timezone.").default("America/Los_Angeles"),
 	avatarObjectKey: z.string().trim().min(1).nullable().optional(),
 	role: z.enum(["FATHER", "MOTHER", "CAREGIVER"]).default("MOTHER"),
 });
@@ -41,6 +50,7 @@ const updateBabySchema = z.object({
 	name: z.string().trim().min(1).max(80),
 	birthdate: z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date."),
 	sex: z.enum(["GIRL", "BOY"]),
+	timezone: z.string().trim().min(1).refine(isValidTimeZone, "Must be a valid timezone.").optional(),
 });
 
 const avatarUploadSchema = z.object({
