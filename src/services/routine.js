@@ -168,6 +168,19 @@ function getSleepRoutineDate(row, timezone) {
 	return localDateForInstant(row.startTime, timezone);
 }
 
+function getSleepOverlapDates(row, timezone) {
+	const endTime = row.endTime ?? new Date();
+
+	if (endTime.getTime() <= row.startTime.getTime()) {
+		return [localDateForInstant(row.startTime, timezone)];
+	}
+
+	return dateRange(
+		localDateForInstant(row.startTime, timezone),
+		localDateForInstant(endTime, timezone),
+	);
+}
+
 function getEventRoutineDate(event, timezone) {
 	if (event.kind === "sleep") {
 		return getSleepRoutineDate(event.raw, timezone);
@@ -250,18 +263,17 @@ async function loadRowsForDates(client, babyId, startDate, endDate) {
 		client.sleepSession.findMany({
 			where: {
 				babyId,
+				startTime: {
+					lt: bounds.end,
+				},
 				OR: [
-					{
-						startTime: {
-							gte: bounds.start,
-							lt: bounds.end,
-						},
-					},
 					{
 						endTime: {
 							gte: bounds.start,
-							lt: bounds.end,
 						},
+					},
+					{
+						endTime: null,
 					},
 				],
 			},
@@ -539,12 +551,13 @@ async function getRoutineStatsForBaby(client, baby, startDate, endDate) {
 	}
 
 	for (const sleep of rows.sleeps) {
-		const date = getSleepRoutineDate(sleep, baby.timezone);
-		if (logsByDate.has(date)) {
-			logsByDate.get(date).push({
-				sortTime: sleep.endTime ?? sleep.startTime,
-				value: serializeSleepPatternLog(sleep),
-			});
+		for (const date of getSleepOverlapDates(sleep, baby.timezone)) {
+			if (logsByDate.has(date)) {
+				logsByDate.get(date).push({
+					sortTime: sleep.endTime ?? sleep.startTime,
+					value: serializeSleepPatternLog(sleep),
+				});
+			}
 		}
 	}
 
