@@ -11,8 +11,8 @@ import {
 const AVATAR_CONTENT_TYPES = new Map([
 	["image/jpeg", "jpg"],
 	["image/png", "png"],
-	["image/webp", "webp"],
 ]);
+const MAX_AVATAR_SIZE_BYTES = 1 * 1024 * 1024;
 
 async function serializeBaby(baby) {
 	return {
@@ -189,6 +189,10 @@ export async function updateBabyForUser(userId, babyId, input) {
 export async function createBabyAvatarUploadForUser(userId, babyId, input) {
 	if (!AVATAR_CONTENT_TYPES.has(input.contentType)) {
 		return { error: "INVALID_AVATAR_CONTENT_TYPE" };
+	}
+
+	if (input.sizeBytes > MAX_AVATAR_SIZE_BYTES) {
+		return { error: "AVATAR_FILE_TOO_LARGE" };
 	}
 
 	const baby = await findAccessibleBabyForUser(userId, babyId);

@@ -21,7 +21,11 @@ const tagParamsSchema = babyParamsSchema.extend({
 	tagId: z.uuid(),
 });
 
-const tagNameSchema = z.string().trim().min(1).max(40);
+const MAX_TAG_NAME_LENGTH = 30;
+const tagNameSchema = z.string().trim().min(1, "Tag name is required.").max(
+	MAX_TAG_NAME_LENGTH,
+	`Tag names must be ${MAX_TAG_NAME_LENGTH} characters or fewer.`,
+);
 const tagTypeSchema = z.string().trim().min(1).max(40);
 const tagColorSchema = z.string().trim().min(1).max(32);
 

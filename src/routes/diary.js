@@ -30,6 +30,7 @@ function isValidDateString(value) {
 const dateStringSchema = z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date.");
 const contentSchema = z.string().trim().min(1).max(500);
 const titleSchema = z.string().trim().max(80).nullable();
+const MAX_DIARY_TAGS = 10;
 const mediaSchema = z.object({
 	fileType: z.string().trim().min(1).max(80),
 	description: z.string().trim().max(200).nullable().optional(),
@@ -97,7 +98,7 @@ const createDiaryBodySchema = z.object({
 	content: contentSchema,
 	diaryDate: dateStringSchema,
 	media: z.array(mediaSchema).max(20).default([]),
-	tagIds: z.array(z.uuid()).max(30).default([]),
+	tagIds: z.array(z.uuid()).max(MAX_DIARY_TAGS, `Choose up to ${MAX_DIARY_TAGS} tags.`).default([]),
 	title: titleSchema.optional(),
 });
 
@@ -106,7 +107,7 @@ const updateDiaryBodySchema = z
 		content: contentSchema.optional(),
 		diaryDate: dateStringSchema.optional(),
 		media: z.array(mediaSchema).max(20).optional(),
-		tagIds: z.array(z.uuid()).max(30).optional(),
+		tagIds: z.array(z.uuid()).max(MAX_DIARY_TAGS, `Choose up to ${MAX_DIARY_TAGS} tags.`).optional(),
 		title: titleSchema.optional(),
 	})
 	.refine(

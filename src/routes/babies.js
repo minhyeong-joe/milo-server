@@ -37,8 +37,16 @@ function isValidTimeZone(value) {
 	}
 }
 
+const MAX_BABY_NAME_LENGTH = 20;
+const MAX_AVATAR_SIZE_BYTES = 1 * 1024 * 1024;
+const SUPPORTED_AVATAR_CONTENT_TYPES = ["image/jpeg", "image/png"];
+const babyNameSchema = z.string().trim().min(1, "Baby name is required.").max(
+	MAX_BABY_NAME_LENGTH,
+	`Baby name must be ${MAX_BABY_NAME_LENGTH} characters or fewer.`,
+);
+
 const createBabySchema = z.object({
-	name: z.string().trim().min(1).max(80),
+	name: babyNameSchema,
 	birthdate: z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date."),
 	sex: z.enum(["GIRL", "BOY"]).default("BOY"),
 	timezone: z.string().trim().min(1).refine(isValidTimeZone, "Must be a valid timezone.").default("America/Los_Angeles"),
@@ -47,14 +55,21 @@ const createBabySchema = z.object({
 });
 
 const updateBabySchema = z.object({
-	name: z.string().trim().min(1).max(80),
+	name: babyNameSchema,
 	birthdate: z.string().refine(isValidDateString, "Must be a valid YYYY-MM-DD date."),
 	sex: z.enum(["GIRL", "BOY"]),
 	timezone: z.string().trim().min(1).refine(isValidTimeZone, "Must be a valid timezone.").optional(),
 });
 
 const avatarUploadSchema = z.object({
-	contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+	contentType: z.string().refine(
+		(value) => SUPPORTED_AVATAR_CONTENT_TYPES.includes(value),
+		"Profile pictures must be JPG or PNG and 1 MB or smaller.",
+	),
+	sizeBytes: z.number().int().positive().max(
+		MAX_AVATAR_SIZE_BYTES,
+		"Profile pictures must be JPG or PNG and 1 MB or smaller.",
+	),
 });
 
 const avatarConfirmSchema = z.object({
@@ -92,7 +107,16 @@ function sendBabyServiceError(res, code) {
 			res,
 			400,
 			"INVALID_AVATAR_CONTENT_TYPE",
-			"Avatar image type is not supported.",
+			"Profile pictures must be JPG or PNG and 1 MB or smaller.",
+		);
+	}
+
+	if (code === "AVATAR_FILE_TOO_LARGE") {
+		return sendError(
+			res,
+			400,
+			"AVATAR_FILE_TOO_LARGE",
+			"Profile pictures must be JPG or PNG and 1 MB or smaller.",
 		);
 	}
 
