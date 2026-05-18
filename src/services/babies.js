@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import prisma from "../db/prisma.js";
+import { rebuildRoutineSummariesForBaby } from "./routine.js";
 import {
 	S3_PRESIGNED_PUT_EXPIRES_IN_SECONDS,
 	createPresignedGetUrl,
@@ -153,20 +154,31 @@ export async function updateBabyForUser(userId, babyId, input) {
 				deletedAt: null,
 			},
 		},
+		include: {
+			baby: true,
+		},
 	});
 
 	if (!access) {
 		return null;
 	}
 
-	const baby = await prisma.baby.update({
-		where: { id: babyId },
-		data: {
-			name: input.name,
-			birthdate: new Date(`${input.birthdate}T00:00:00.000Z`),
-			sex: input.sex,
-			...(input.timezone ? { timezone: input.timezone } : {}),
-		},
+	const baby = await prisma.$transaction(async (tx) => {
+		const updatedBaby = await tx.baby.update({
+			where: { id: babyId },
+			data: {
+				name: input.name,
+				birthdate: new Date(`${input.birthdate}T00:00:00.000Z`),
+				sex: input.sex,
+				...(input.timezone ? { timezone: input.timezone } : {}),
+			},
+		});
+
+		if (input.timezone && input.timezone !== access.baby.timezone) {
+			await rebuildRoutineSummariesForBaby(tx, updatedBaby);
+		}
+
+		return updatedBaby;
 	});
 
 	return {

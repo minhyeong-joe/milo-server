@@ -283,6 +283,22 @@ async function loadRowsForDates(client, babyId, startDate, endDate) {
 	return { meals, diapers, sleeps };
 }
 
+async function loadAllRowsForBaby(client, babyId) {
+	const [meals, diapers, sleeps] = await Promise.all([
+		client.routineMealEvent.findMany({
+			where: { babyId },
+		}),
+		client.routineDiaperEvent.findMany({
+			where: { babyId },
+		}),
+		client.sleepSession.findMany({
+			where: { babyId },
+		}),
+	]);
+
+	return { meals, diapers, sleeps };
+}
+
 async function recomputeSummaries(client, baby, dates) {
 	const uniqueDates = [...new Set(dates)].filter(Boolean).sort();
 
@@ -326,6 +342,17 @@ async function recomputeSummaries(client, baby, dates) {
 			});
 		}),
 	);
+}
+
+export async function rebuildRoutineSummariesForBaby(client, baby) {
+	const rows = await loadAllRowsForBaby(client, baby.id);
+	const dates = getActiveDatesFromRows(rows, baby.timezone);
+
+	await client.dailyRoutineSummary.deleteMany({
+		where: { babyId: baby.id },
+	});
+
+	await recomputeSummaries(client, baby, dates);
 }
 
 function summaryDateForMeal(row, timezone) {
