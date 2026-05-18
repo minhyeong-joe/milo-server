@@ -168,6 +168,14 @@ function getSleepRoutineDate(row, timezone) {
 	return localDateForInstant(row.startTime, timezone);
 }
 
+function getSleepHomeTimelineDate(row, timezone) {
+	if (row.sleepType === "nighttime" && row.endTime) {
+		return localDateForInstant(row.endTime, timezone);
+	}
+
+	return localDateForInstant(row.startTime, timezone);
+}
+
 function getSleepOverlapDates(row, timezone) {
 	const endTime = row.endTime ?? new Date();
 
@@ -183,7 +191,7 @@ function getSleepOverlapDates(row, timezone) {
 
 function getEventRoutineDate(event, timezone) {
 	if (event.kind === "sleep") {
-		return getSleepRoutineDate(event.raw, timezone);
+		return getSleepHomeTimelineDate(event.raw, timezone);
 	}
 
 	return localDateForInstant(event.sortTime, timezone);
@@ -439,7 +447,7 @@ function getTimelineDateForStoredRow(kind, row, timezone) {
 		return summaryDateForDiaper(row, timezone);
 	}
 
-	return getSleepRoutineDate(row, timezone);
+	return getSleepHomeTimelineDate(row, timezone);
 }
 
 async function getAffectedDailyLogs(client, baby, dates) {
@@ -990,7 +998,7 @@ function getActiveDatesFromRows(rows, timezone) {
 	}
 
 	for (const sleep of rows.sleeps) {
-		dates.add(getSleepRoutineDate(sleep, timezone));
+		dates.add(getSleepHomeTimelineDate(sleep, timezone));
 	}
 
 	return [...dates];
@@ -1161,7 +1169,7 @@ export async function createRoutineLogForUser(userId, babyId, input) {
 			});
 			event = serializeSleep(row);
 			summaryDate = summaryDateForSleep(row, baby.timezone);
-			timelineDate = getSleepRoutineDate(row, baby.timezone);
+			timelineDate = getSleepHomeTimelineDate(row, baby.timezone);
 		}
 
 		const summaryDates = summaryDate ? [summaryDate] : [];
